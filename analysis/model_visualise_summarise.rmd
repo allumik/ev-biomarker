@@ -1,0 +1,109 @@
+```{r warning = F, message = F}
+
+## and run the model with the input reference data.
+model_obj <-
+  silent_beready_model(
+    # the reference data
+    ref_dat,
+    # dynamic filtering geneset
+    uf_dyn_genes,
+    # and the data we want to evalate
+    test_dat,
+    is_dyn_filt = T
+  )
+
+```
+
+```{r warning = F, message = F}
+
+## add PCA
+expr_pca <-
+  model_obj %$%
+  { join_model_pca(pca_all, score_table) } %>%
+  left_join( pheno_test %>% select(-group), by = c("sample" = "samplename") ) %>%
+  left_join( comb_pheno %>% select(-group), by = c("sample" = "samplename") ) %>%
+  mutate(
+    group = case_when(
+      group == "Input" & str_detect(sample, "UF") ~ "UF",
+      group == "Input" & str_detect(sample, "biopsy") ~ "biopsy",
+      T ~ group
+    ),
+    cyclephase = case_when(
+      cyclephase.x == "pro" | cyclephase.y == "pro" ~ "Prolif",
+      cyclephase.x == "pre" | cyclephase.y == "pre" ~ "LH2",
+      cyclephase.x == "rec" | cyclephase.y == "rec" ~ "LH7",
+      cyclephase.x == "post" | cyclephase.y == "post" ~ "LH12",
+      T ~ cyclephase.x
+      ),
+    dataset = ifelse(is.na(dataset.x), dataset.y, dataset.x)
+  ) %>% 
+  # remove the join duplicates
+  select(-matches("\\.x$|\\.y$"))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(sample, "<br>Sample type:", dataset, "<br>Cycle phase:", cyclephase),
+    color = ~ cyclephase,
+    colors = add_coloring,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+```{r warning = F, message = F}
+
+res_table <-
+  beready_results_formatter(
+    model_obj$score_table,
+    test_dat %>% select(c("sample", "group"))
+  )
+
+res_table %>%
+  downtable(sortable = T, filterable = T)
+
+```
+
+Summary statistics:
+
+```{r warning = F, message = F, error = T}
+
+vfold_split <-
+  vfold_cv(
+    ref_dat %>% select(-batch),
+    v = 5,
+    repeats = ifelse(rep_or_not, 20, 1),
+    strata = group
+    )
+
+# run the CV runner in parallel and summarise the results
+cv_results <-
+  foreach::foreach(that_split = vfold_split$splits, .combine = "bind_rows", .inorder = F) %dopar% {
+    beready_cv_fold(that_split, uf_dyn_genes)
+  } %>%
+  # select only the interesting values
+  filter(str_detect(Metrics, "Acc")) %>%
+  # pivot longer for grouping
+  pivot_longer(where(is_bare_numeric), values_to = "Score", names_to = "Dataset") %>%
+  # group by dataset type and summarise
+  group_by(Dataset, Metrics) %>%
+  # remove NAs in some cases to still get results
+  summarise(`CV Accuracy` = mean(Score, na.rm = T)) %>%
+  pivot_wider(values_from = "CV Accuracy", names_from = "Dataset") %>%
+  mutate(Metrics = paste("CV", Metrics), .before = everything())
+
+# get the summary stats from the testing set and combine it with crossval
+beready_summary_stats(res_table) %>%
+  bind_rows(cv_results) %>%
+  mutate(across(where(is_bare_numeric), ~ round(.x, 4))) %>%
+  downtable(sortable = T, defaultPageSize = 15)
+
+```
+

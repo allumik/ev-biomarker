@@ -1,0 +1,1143 @@
+---
+title: "beREADY-EV application on clinical samples"
+author: Alvin Meltsov
+date: "Compiled on `r format(Sys.time(), '%d/%m/%y')`"
+output:
+  rmdformats::robobook:
+    number_sections: true
+    code_folding: hide
+    fig_width: 8
+    fig_height: 6
+---
+
+# Prelude: Setup environment
+
+## Load data and environment
+
+Load up the combined dataset of the beREADY-EV model that we were most successful with, and load in the clinical samples.
+
+```{r warning = F, message = F}
+## !RUNTHIS
+## load the project dependencies
+source("./scripts/load_deps.R")
+## load the model metrics functions
+source("./scripts/metrics_functions.R")
+
+## check if theres a R data object already, othewise run the data muncher
+# and save the preprocessed data into the RData
+# use "comb_dataobj" to avoid conflict with "dataobj"
+comb_data_subfolder <- "./data/combined/"
+dataobj <- paste0(comb_data_subfolder, "ev_data_comb.RData")
+if (file.exists(dataobj)) {
+  load(dataobj)
+} else {
+  ## load in the backend data muncher with arguments
+  commandArgs <- function(...) list( comb_data_subfolder = comb_data_subfolder )
+  dir.create(comb_data_subfolder, showWarnings = F)
+  invisible(source("./scripts/de_comb_runner.R"))
+  ## source the DE scripts for the thing
+  save.image(file = dataobj)
+}
+
+dataobj <- paste0(comb_data_subfolder, "ev_data_clin.RData")
+if (file.exists(dataobj)) {
+  load(dataobj)
+} else {
+  invisible(source("./scripts/de_clin_runner.R"))
+  ## source the DE scripts for the thing
+  save.image(file = dataobj)
+}
+
+## generate some dataformats
+comb_expr <-
+  comb_batch %>%
+  transform_count_mat(comb_pheno)
+
+comb_expr_tpm <-
+  comb_batch_tpm %>%
+  transform_count_mat(comb_pheno)
+
+## write out the de genes
+out_join %>%
+  write_tsv("./genesets/clin_de_genes.tsv")
+
+```
+
+## Look at general clustering of samples {.tabset}
+
+### PCA
+
+First 3 components over all the genes.
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = global_expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "; Implantation: ", implantation),
+    color = ~ implantation,
+    symbol = ~ implantation,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### UMAP
+
+But for large and poorly normalised data we are better off using the UMAP algrithm.
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = global_expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    type = "scatter",
+    text = ~ paste0(samplename, "; Implantation: ", implantation),
+    color = ~ implantation,
+    symbol = ~ implantation,
+    symbols = c("", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### Correlation heatmap
+
+```{r warning = F, message = F}
+
+cor_ht <-
+  clin_expr_tpm %>%
+  select(-c("implantation")) %>%
+  column_to_rownames("samplename") %>%
+  as.matrix %>%
+  t %>%
+  cor(method = "spearman") %>%
+  heatmaply_cor(
+    limits = c(0, 1),
+    col_side_colors = clin_expr_tpm %>% select(!where(is.numeric)) %>% column_to_rownames("samplename"),
+    row_side_colors = clin_expr_tpm %>% select(!where(is.numeric)) %>% column_to_rownames("samplename"),
+    showticklabels = c(F, F)
+  )
+
+cor_ht
+
+```
+
+# DE on the implantation phenotype {.tabset}
+
+We would also be interested if there is a difference in the gene expressions of EV transcriptome of implanted endometria and in endometrium that did not continue with the implantation.
+
+Venn diagram of DE genes and differential analysis results tables of DE genes with the **FDR<0.1**:
+
+```{r warning = F, message = F}
+
+out_join %>%
+  ggplot(aes(A = deseq_implantation, B = voom_implantation, C = edger_implantation)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3
+  ) + theme_thesis_venn() + ggtitle("DESeq2/voom significant DE genes")
+
+out_join %>% downtable(filterable = T, searchable = T, defaultPageSize = 5)
+
+```
+
+How are those genes expressed? Let's look at the gene expression in group.
+
+```{r warning = F, message = F, fig.height=4}
+
+clin_expr_tpm %>%
+  pivot_longer(
+    where(is_bare_numeric),
+    names_to = "gene_id",
+    values_to = "counts_tpm"
+  ) %>%
+  filter(gene_id %in% out_join$locus) %>%
+  ggplot(aes(implantation, counts_tpm, color = implantation, label = samplename)) +
+  geom_jitter(position = position_jitter(width = .15, seed = 6)) +
+  ggrepel::geom_text_repel(
+    min.segment.length = 0,
+    force = 1.5,
+    position = position_jitter(width = .15, seed = 6)
+  ) +
+  theme_thesis() +
+  theme(
+    strip.placement = "inside",
+    strip.text.x = element_text()
+  ) +
+  scale_color_manual(values = wesanderson::wes_palette("Darjeeling1")) +
+  facet_wrap(~gene_id, scales = "free", ncol = 4)
+
+```
+
+And alternatively, if we were to look at less stringent testing methods, by filtering just **p-values < 0.05 and absolute log2 fold change > 1**:
+
+```{r warning = F, message = F}
+
+out_join_fdrless %>%
+  ggplot(aes(A = deseq_implantation, B = voom_implantation, C = edger_implantation)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3
+  ) + theme_thesis_venn() + ggtitle("DESeq2/voom significant DE genes")
+
+out_join_fdrless %>% downtable(filterable = T, searchable = T, defaultPageSize = 5)
+
+```
+
+The heatmap of TPM normalised counts with hierarchical clustering of those DE genes (scaled per sample): 
+
+```{r warning = F, message = F, fig.height = 12}
+
+clin_expr_tpm %>%
+  select(c(-where(is_bare_numeric), out_join_fdrless$locus)) %>%
+  column_to_rownames("samplename") %>% {
+    heatmaply(
+      t(select(., -implantation)),
+      col_side_colors = .["implantation"],
+      scale = "row",
+      seriate = "OLO",
+      colors = wesanderson::wes_palette("Zissou1")
+    )
+  }
+
+```
+
+PCA of all the DE genes:
+
+```{r warning = F, message = F, fig.height = 8}
+
+# have to transpose -.-
+filt_counts <-
+  clin_expr_tpm %>%
+  select(c("samplename", out_join_fdrless$locus[out_join_fdrless$locus %in% colnames(clin_expr_tpm)]))
+expr_pca <-
+  filt_counts %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts) %>%
+  left_join(clin_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Implantation: ", implantation),
+    color = ~ implantation,
+    symbol = ~ as.character(n_transfer_embryo),
+    symbols = c(1, 2),
+    marker = list(size = 8),
+    mode = "markers"
+  )
+
+```
+
+Collect and report the DE different genes from **DESeq2**, **limma-voom** and **edgeR**:
+
+## DESeq2
+
+The top adj_p < 0.1 genes:
+
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+deseq_res_group$implantation[[1]] %>%
+  rename("{names(deseq_res_group$implantation[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+All the DE genes:
+
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+deseq_res_group$implantation[[4]] %>%
+  rename("{names(deseq_res_group$implantation[4])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+## limma-voom:
+
+The top adj_p < 0.05 genes:
+
+```{r warning = F, message = F}
+voom_res_group$implantation[[1]] %>%
+  rename("{names(voom_res_group$implantation[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+All the DE genes:
+
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+voom_res_group$implantation[[4]] %>%
+  rename("{names(voom_res_group$implantation[4])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+## edgeR:
+
+The top adj_p < 0.05 genes:
+
+```{r warning = F, message = F}
+edger_res_group$implantation[[1]] %>%
+  rename("{names(edger_res_group$implantation[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+All the DE genes:
+
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+edger_res_group$implantation[[4]] %>%
+  rename("{names(edger_res_group$implantation[4])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+
+# Clustering with other genesets {.tabset}
+
+Here we apply the beREADY model for the counts. Due to large number of samples having bad coverage of the housekeeper genes, we apply here a slight modification to the geometric mean normalisation step. Namely, we use shifted logarithm instead of the natural logarithm found in the geometric mean calculation. Therefore these scores may not be completely comparable with the reference samples.
+
+For other genesets, we use TPM normalised counts.
+
+## beREADY {.tabset}
+
+```{r warning=F, message=F}
+
+# use this function to apply the geometric mean on the counts
+geom_norm_col <- function(
+    dat,
+    vals_from = "molecule_count",
+    finders = c("CYC1", "HMBS", "TBP", "SDHA"),
+    .rename = F
+  ) {
+  dat %>%
+    select(-where(is.numeric) | one_of(vals_from)) %>%
+    pivot_wider(
+      names_from = c("sample", "batch"),
+      names_sep = ">",
+      values_from = all_of(vals_from)
+    ) %>%
+    mutate_if(is.numeric, function(x) {
+      x / exp(mean(log(x[.$locus %in% finders])))
+    }) %>%
+    pivot_longer(where(is.numeric),
+      names_to = c("sample", "batch"),
+      names_sep = ">",
+      values_to = ifelse(.rename, vals_from, "norm_count")
+    )
+}
+
+br_genset <- c(beready_genes, finders)
+
+expr_dat <-
+  clin_expr %>%
+    select(
+      c("samplename", "implantation", 
+      br_genset[br_genset %in% colnames(.)])) %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    mutate(external_gene_name = replace(external_gene_name, NA, 0))
+
+norm_test_dat <-
+  expr_dat %>%
+    rename(
+      locus = external_gene_name,
+      sample = samplename,
+      batch = implantation
+    ) %>%
+    # apply the shifted logarithm geom. normalisation
+    geom_norm_col %>%
+    pivot_wider(names_from = "locus", values_from = "norm_count")
+
+## TMP
+model_obj <-
+  silent_beready_model(
+    tacseqApp::controls_data$`READY NC controls`,
+    tacseqApp::targets_data$`Dynamic filtering geneset`,
+    norm_test_dat
+  )
+
+```
+
+
+### Shifted lognorm counts
+
+Here we subset the genes in the beREADY assay, do shifted log-normalisation and check how the expression rates differ between samplescheck how the expression rates differ between samples.
+
+```{r warning = F, message = F, fig.height = 8}
+
+expr_dat %>%
+  filter(external_gene_name %in% beready_genes) %>%
+  distinct(.keep_all = T) %>%
+  ggplot(aes(log2(molecule_count + 1), external_gene_name, fill = implantation)) +
+  geom_boxplot() +
+  theme_thesis() +
+  xlab("") +
+  ylab("Molecule counts log2") +
+  scale_y_discrete(limits = rev)
+
+```
+
+As one can see, sample have a pretty similar expressional profile, therefore they shouldnt really differ in receptivity testing too.
+
+### PCA and results table
+
+The PCA projection on the reference set and the results table.
+
+```{r warning = F, message = F}
+
+## make the PCA object for later on
+expr_pca <-
+  model_obj %$%
+  { join_model_pca(pca_all, score_table) } %>%
+  left_join(
+    clin_pheno %>% rename(type = implantation), by = c("sample" = "samplename")
+  ) %>%
+  ## exclude no-result smales
+  filter(label != "No result")
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca %>%
+      mutate( type = ifelse(is.na(type), "reference", type) ),
+    x = ~ PC1,
+    y = ~ PC2,
+    type = "scatter",
+    text = ~ paste0(sample,
+      "<br>Implantation: ", type, 
+      "<br>Predicted group: ", label
+      ),
+    color = ~ label, 
+    symbol = ~ type,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+```{r warning = F, message = F}
+
+res_table <-
+  model_obj$score_table %>%
+  left_join(clin_expr %>% select(-where(is.numeric)), by = c("Sample Name" = "samplename"))
+
+res_table %>%
+  downtable(sortable = T, filterable = T)
+
+```
+
+And a boxplot with the results per implantation success
+
+```{r warning = F, message = F}
+
+res_table %>%
+  filter(!is.na(implantation)) %>%
+  ggplot(aes(implantation,fill = `Predicted Group`)) +
+  scale_fill_manual(values = color_grouping) +
+  geom_bar(position = "fill") +
+  theme_thesis()
+
+```
+
+
+
+## TED genes {.tabset}
+
+TED set consist of 73 genes that are found retrospectively via tuning ML models on previously analysed biomarker study datasets.
+
+```{r warning=F, message=F}
+
+filt_counts <-
+  clin_expr_tpm %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    filter(external_gene_name %in% ted_genes)
+
+```
+
+### Boxplot
+
+```{r warning = F, message = F, fig.height = 16}
+
+filt_counts %>%
+  distinct(.keep_all = T) %>%
+  ggplot(aes(log2(molecule_count), external_gene_name, fill = implantation)) +
+  geom_boxplot() +
+  theme_thesis() +
+  xlab("") +
+  ylab("Molecule counts log2") +
+  scale_y_discrete(limits = rev)
+
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
+
+```
+
+### PCA
+
+```{r warning = F, message = F}
+
+filt_counts_wide <-
+  filt_counts %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "external_gene_name",
+    values_from = "molecule_count"
+    ) %>%
+  mutate(across(where(is.numeric), ~replace(., is.na(.), 0))) %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  rowwise %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  ungroup
+
+expr_pca <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(clin_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Implantation: ", implantation),
+    color = ~ implantation,
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### UMAP
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(clin_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Implantation: ", implantation),
+    color = ~ implantation,
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+
+## ERA genes {.tabset}
+
+```{r warning=F, message=F}
+
+filt_counts <-
+  clin_expr_tpm %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    filter(external_gene_name %in% era_genes)
+
+```
+
+### Boxplot
+
+There are >200 genes, so this is not gonna make sense...
+
+```{r warning = F, message = F, fig.height=24}
+
+filt_counts %>%
+  distinct(.keep_all = T) %>%
+  ggplot(aes(log2(molecule_count + 1), external_gene_name, fill = implantation)) +
+  geom_boxplot() +
+  theme_thesis() +
+  xlab("") +
+  ylab("Molecule counts log2") +
+  scale_fill_manual(values = status_grouping) +
+  scale_y_discrete(limits = rev)
+
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
+
+```
+
+### PCA
+
+```{r warning = F, message = F}
+
+filt_counts_wide <-
+  filt_counts %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "external_gene_name",
+    values_from = "molecule_count"
+    ) %>%
+  mutate(across(where(is.numeric), ~replace(., is.na(.), 0))) %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  rowwise %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  ungroup
+
+expr_pca <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(clin_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Implantation: ", implantation),
+    color = ~ implantation,
+    marker = list(size = 6),
+    mode = "markers"
+  )
+  
+```
+
+
+### UMAP
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(clin_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Implantation: ", implantation),
+    color = ~ implantation,
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+# beREADY-EV testing
+
+Here we apply the best performing beREADY-EV model on the clinical dataset.
+
+Currently, the best performing model is the beREADY model with only UF origin training samples, UF+Biopsy derived biomarker set and UF housekeepers.
+
+```{r warning = F, message = F}
+
+# !RUNTHIS
+add_coloring <- c(
+  "LH2" = color_grouping_alt[["pre"]],
+  "LH7" = color_grouping_alt[["rec"]],
+  "LH12" = color_grouping_alt[["post"]],
+  "Prolif" = color_grouping_alt[["pro"]],
+  "Reference" = color_grouping_alt[["hrt"]]
+)
+
+# read in the gene tables and the UF
+uf_hs <-
+  read_tsv(paste0(comb_data_subfolder, "uf_finders.tsv"))
+
+uf_finders <-
+  uf_hs %$%
+  external_gene_name %>%
+  unique %>%
+  head(4)
+
+uf_dyn_genes <- read_tsv(paste0(comb_data_subfolder, "uf_bio_genes.tsv"))
+
+```
+
+First, lets run the model and see the predictions with the implantation success:
+
+```{r warning = F, message = F}
+
+the_gene_set <- c(uf_dyn_genes$locus, uf_finders)
+
+## now format the data for beready and normalise the counts with hs
+ref_dat <-
+  comb_batch %>%
+  select(c("gene_id", comb_pheno %>% filter(group == "UF") %$% samplename)) %>%
+  format_for_beready(the_gene_set, comb_pheno, uf_finders) %>%
+  # remove samples which did not have any expression in the housekeeper genes and were NaN
+  filter(if_all(where(is_bare_numeric), ~ !is.nan(.x) | !is.na(.x)))
+
+test_dat <-
+  clin_raw_mat %>%
+  ## select only genes of interest
+  filter(gene_id %in% the_gene_set) %>%
+  ## houskeeper normalise the integers
+  mutate_if(is.numeric, function(x) {
+    x / exp(mean(log(x[.$gene_id %in% uf_finders])))
+  }) %>%
+  ## pivor longer for the phenotype join
+  pivot_longer(where(is.numeric),
+    names_to = "samplename",
+    values_to = "norm_count"
+  ) %>%
+  inner_join(clin_pheno, by = "samplename") %>%
+  rename(sample = samplename, group = implantation) %>%
+  # pivot genes wider for the beready model format
+  pivot_wider(
+    id_cols = !where(is.numeric), 
+    names_from = "gene_id",
+    values_from = "norm_count"
+    )
+
+## and run the model with the input reference data.
+model_obj <-
+  silent_beready_model(
+    # the reference data
+    ref_dat,
+    # dynamic filtering geneset
+    uf_dyn_genes,
+    # and the data we want to evalate
+    test_dat,
+    is_dyn_filt = F
+  )
+
+## apply the "finetuning"
+model_obj$score_table %<>%
+  mutate(`Predicted Group` = 
+    case_when(
+      `Pre-receptive (%)` > 60 ~ "Pre-receptive",
+      `Pre-receptive (%)` > 40 ~ "Early-receptive",
+      `Post-receptive (%)` > 60 ~ "Post-receptive",
+      `Post-receptive (%)` > 40 ~ "Late-receptive",
+      T ~ `Predicted Group`
+      ))
+
+```
+
+```{r warning = F, message = F}
+
+expr_pca <-
+  model_obj %$%
+  { join_model_pca(pca_all, score_table) } %>%
+  left_join(
+    clin_pheno %>% rename(type = implantation), by = c("sample" = "samplename")
+  ) %>%
+  ## exclude no-result smales
+  filter(label != "No result")
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca %>%
+      mutate( type = ifelse(is.na(type), "reference", type) ),
+    x = ~ PC1,
+    y = ~ PC2,
+    type = "scatter",
+    text = ~ paste0(sample,
+      "<br>Implantation: ", type, 
+      "<br>Predicted group: ", label
+      ),
+    color = ~ label, 
+    symbol = ~ type,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+```{r warning = F, message = F}
+
+res_table <-
+  beready_results_formatter(
+    model_obj$score_table,
+    test_dat %>% select(c("sample", "group"))
+  ) %>%
+  select(-match) %>%
+  rename(implantation = group)
+
+res_table %>%
+  downtable(sortable = T, filterable = T)
+
+```
+
+And a boxplot with the results per implantation success
+
+```{r warning = F, message = F}
+
+res_table %>%
+  filter(!is.na(implantation)) %>%
+  ggplot(aes(implantation,fill = `Predicted Group`)) +
+  scale_fill_manual(values = color_grouping) +
+  geom_bar(position = "fill") +
+  theme_thesis()
+
+```
+
+# Expression profile of DE genes throughout the cycle {.tabset}
+
+Here we check the expression rates of DE genes in samples throughout the menstrual cycle. For the through-cycle dataset, we'll use beREADY reference biopsy dataset and the UF reference dataset. Additionally, if possible, we should look at the
+
+## Combined EV set
+
+First, the **combined EV reference set, EV samples**.
+
+```{r warning = F, message = F, fig.height = 6}
+
+comb_batch_tpm %>%
+  filter(gene_id %in% out_join$locus) %>%
+  pivot_longer(
+    where(is_bare_numeric),
+    names_to = "samplename",
+    values_to = "counts_tpm"
+    ) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  mutate(cyclephase = fct_relevel(cyclephase, c("pro", "pre", "rec", "post"))) %>%
+  ggplot(aes(cyclephase, counts_tpm, color = group)) +
+  geom_jitter(width = 0.25) +
+  geom_smooth(
+    aes(as.numeric(as.factor(cyclephase)), counts_tpm),
+    se = T,
+    orientation = "x",
+    color = "darkgray",
+    alpha = 0.2,
+    inherit.aes = F
+    ) +
+  theme_thesis() +
+  theme(
+    strip.placement = "inside",
+    strip.text.x = element_text()
+  ) +
+  scale_color_manual(values = wesanderson::wes_palette("Darjeeling1")) +
+  facet_wrap(~gene_id, scales = "free", ncol = 4)
+
+```
+
+Then, let's check the origin of samples too for the combined EV reference set, EV samples.
+
+```{r warning = F, message = F, fig.height = 6}
+
+comb_batch_tpm %>%
+  filter(gene_id %in% out_join$locus) %>%
+  pivot_longer(
+    where(is_bare_numeric),
+    names_to = "samplename",
+    values_to = "counts_tpm"
+    ) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  mutate(cyclephase = fct_relevel(cyclephase, c("pro", "pre", "rec", "post"))) %>%
+  ggplot(aes(cyclephase, counts_tpm, color = dataset)) +
+  geom_jitter(width = 0.25) +
+  geom_smooth(
+    aes(as.numeric(as.factor(cyclephase)), counts_tpm),
+    se = T,
+    orientation = "x",
+    color = "darkgray",
+    alpha = 0.2,
+    inherit.aes = F
+    ) +
+  theme_thesis() +
+  theme(
+    strip.placement = "inside",
+    strip.text.x = element_text()
+  ) +
+  scale_color_manual(values = wesanderson::wes_palette("Moonrise2")) +
+  facet_wrap(~gene_id, scales = "free", ncol = 4)
+
+```
+
+## CCHT EV set
+
+Second, only looking at the **CCHT EV set or the "HUT set"**.
+
+```{r warning = F, message = F, fig.height = 6}
+
+raw_tpm %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  geneid_converter(annot) %>%
+  rename(gene_id = external_gene_name) %>%
+  pivot_longer(
+    where(is_bare_numeric),
+    names_to = "samplename",
+    values_to = "counts_tpm"
+    ) %>%
+  filter(gene_id %in% out_join$locus) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  mutate(cyclephase = fct_relevel(cyclephase, c("pro", "pre", "rec", "post"))) %>%
+  ggplot(aes(cyclephase, counts_tpm, color = group)) +
+  geom_jitter(width = 0.25) +
+  geom_smooth(
+    aes(as.numeric(as.factor(cyclephase)), counts_tpm),
+    se = T,
+    orientation = "x",
+    color = "darkgray",
+    alpha = 0.2,
+    inherit.aes = F
+    ) +
+  theme_thesis() +
+  theme(
+    strip.placement = "inside",
+    strip.text.x = element_text()
+  ) +
+  scale_color_manual(values = wesanderson::wes_palette("Darjeeling1")) +
+  facet_wrap(~gene_id, scales = "free", ncol = 4)
+
+```
+
+# Predict clinical outcome with ML
+
+Build pipeline with preprocessing and split
+
+```{r warning = F, message = F}
+set.seed(88)
+
+## genes to look at 
+the_gene_set <- c(out_join_fdrless$locus)
+
+# the ref_dat here should be the large TED+UF geneset with bio+UF samples
+ref_dat <-
+  # raw_tpm %>%
+  # rename(ensembl_gene_id = gene_id) %>%
+  # geneid_converter(annot) %>%
+  # rename(gene_id = external_gene_name) %>%
+  clin_tpm_mat %>%
+  filter(gene_id %in% the_gene_set) %>%
+  pivot_longer(where(is_bare_numeric), names_to = "samplename", values_to = "raw_counts") %>%
+  pivot_wider(values_from = "raw_counts", names_from = "gene_id") %>%
+  inner_join(clin_pheno, by = "samplename") %>%
+  mutate(implantation = fct_relevel(as.character(implantation)))
+
+# create the recipe for the models
+expr_recipe <-
+  recipe(implantation ~ ., data = ref_dat) %>%
+  update_role(samplename, new_role = "id") %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors())
+
+print(expr_recipe)
+
+# ref_dat2 <- juice(prep(expr_recipe))
+# expr_train <- ref_dat2
+
+# we don't need to split training set
+expr_split <- initial_split(ref_dat, prop = .8, strata = implantation)
+expr_train <- training(expr_split)
+expr_test <- testing(expr_split)
+
+## and split into val
+expr_val <- vfold_cv(expr_train, v = 2, strata = implantation)
+
+```
+
+Tune the model
+
+```{r warning = F, message = F}
+set.seed(88)
+
+# replace this with xgb - boost_tree()
+tune_spec <-
+#   rand_forest(
+  boost_tree(
+    mtry = tune(),
+    min_n = tune(),
+    trees = 100 # 1000
+  ) %>%
+#   set_engine("ranger", num.threads = round(cores - 1)) %>%
+  set_engine("xgboost", nthread = 4) %>% # nthread = 1
+  set_mode("classification")
+
+wflow <-
+  workflow() %>%
+  add_model(tune_spec) %>%
+  add_recipe(expr_recipe)
+  
+p <- parameters(
+  mtry(range = c(4, 82)),
+  min_n(range = c(1, 4))
+)
+param_grid <- grid_regular(p, levels = c(36, 3)) # 10
+
+
+# this part takes a lot of time...
+tune_result_file <- "./data/tune_result.rds"
+if (file.exists(tune_result_file)) {
+  tune_result <- read_rds(tune_result_file)
+} else {
+  tic()
+  tune_result <-
+    wflow %>%
+    tune_grid(
+      expr_val,
+      grid = param_grid,
+      metrics = metric_set(roc_auc)
+    )
+  toc()
+  write_rds(tune_result, tune_result_file)
+}
+
+tune_result %>%
+  collect_metrics() %>%
+  mutate(across(where(is_bare_numeric), ~ round(.x, 4))) %>%
+  downtable(sortable = T)
+
+```
+
+Collect the metrics and show the best performing model.
+
+```{r warning = F, message = F}
+
+tune_best <-
+  tune_result %>%
+  select_by_one_std_err(min_n, mtry, metric = "roc_auc")
+
+print(tune_best)
+
+tune_result %>% show_best(metric = "roc_auc")
+
+```
+
+Train the model using tuned metrics
+
+```{r warning = F, message = F}
+set.seed(88)
+
+# the last fit
+forest_model <-
+  boost_tree(
+    mtry = tune_best$mtry,
+    min_n = tune_best$min_n,
+    trees = 15000
+  ) %>%
+  set_engine("xgboost", nthread = 4, importance = "impurity") %>%
+  set_mode("classification")
+
+wflow <-
+  workflow() %>%
+  add_recipe(expr_recipe) %>%
+  add_model(forest_model)
+
+wfit <-
+  wflow %>%
+  fit(expr_train)
+
+```
+
+Predict on separated (not used in training) test set and get the accuracy
+
+```{r warning = F, message = F}
+
+preds_test <- predict(wfit, expr_test)
+
+preds_test <-
+  expr_test %>%
+  select(samplename) %>%
+  inner_join(clin_pheno) %>%
+  bind_cols(preds_test) %>%
+  mutate(Hits = implantation == .pred_class)
+
+preds_test %>%
+  mutate(across(where(is_bare_numeric), ~ round(.x, 4))) %>%
+  downtable(filterable = T)
+
+```
+
+Hits of the RF model on the test set: `r sum(preds_test$Hits)`
+
+Accuracy of the RF model on the test set: `r sum(preds_test$Hits) / length(preds_test$Hits)`
+
+## Look at the importance of features
+
+Here we at first visualize the importance of variables used in the RF model (ie genes), and then filter out at some level the most important genes in the upper quartile of the set. After that, we create an annotated table for those samples.
+
+```{r warning = F, message = F, fig.height = 12}
+
+wfit %>%
+  extract_fit_parsnip() %>%
+  vip::vip(num_features = 50) + #, method = "firm", train = expr_train) + 
+  labs(title = "Random forest variable importance")
+
+rf_res <-
+  wfit %>%
+  extract_fit_parsnip %>%
+  vip::vi(.) %>%
+  # mutate(`Norm. Importance` = Importance * n()) %>%
+  # filter(`Norm. Importance` > 2) %>%
+  filter(Importance > quantile(Importance, 0.9)) %>%
+  rename(external_gene_name = Variable)
+
+rf_res %>%
+  left_join(annot, by = c("external_gene_name")) %>%
+  reactable(sortable = T, searchable = T)
+
+# rf_res %>%
+#   left_join(annot, by = c("locus" = "ensembl_gene_id")) %>%
+#   write_csv2("./reports/rec_rf_genes.csv")
+
+```
+
+
+# Session info
+
+```{r warning = F, message = F}
+
+sessionInfo()
+
+```

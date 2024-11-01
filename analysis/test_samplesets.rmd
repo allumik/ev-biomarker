@@ -1,0 +1,109 @@
+### UF training samples | beREADY housekeepers
+
+```{r warning = F, message = F}
+
+## with finders
+the_gene_set <- c(uf_dyn_genes$locus, finders)
+
+## now format the data for beready and normalise the counts with hs
+ref_dat <-
+  raw_mat %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  geneid_converter(annot) %>%
+  rename(gene_id = external_gene_name) %>%
+  select(c("gene_id", contains("UF"))) %>%
+  format_for_beready(the_gene_set, pheno, finders) %>%
+  # remove samples which did not have any expression in the housekeeper genes and were NaN
+  filter(if_all(where(is_bare_numeric), ~ !is.nan(.x) | !is.na(.x)))
+
+test_dat <-
+  raw_mat_test %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  ## reannotate with HUGO
+  geneid_converter(annot) %>%
+  ## do the stupid name conversion again
+  rename(gene_id = external_gene_name) %>%
+  format_for_beready(the_gene_set, pheno_test, finders)
+
+```
+
+```{r, child = "./model_visualise_summarise.rmd"}
+## use child rmarkdown document for visualisation
+```
+
+
+### UF + Biopsy training samples | beREADY housekeepers
+
+```{r warning = F, message = F}
+
+## now format the data for beready and normalise the counts with hs
+ref_dat <-
+  raw_mat %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  geneid_converter(annot) %>%
+  rename(gene_id = external_gene_name) %>%
+  format_for_beready(the_gene_set, pheno, finders) %>%
+  # remove samples which did not have any expression in the housekeeper genes and were NaN
+  filter(if_all(where(is_bare_numeric), ~ !is.nan(.x) | !is.na(.x)))
+
+## test set is recycled
+```
+
+```{r, child = "./model_visualise_summarise.rmd"}
+## use child rmarkdown document for visualisation
+```
+
+### UF training samples | UF housekeepers
+
+```{r warning = F, message = F}
+
+## with finders
+the_gene_set <- c(uf_dyn_genes$locus, uf_finders)
+
+## now format the data for beready and normalise the counts with hs
+ref_dat <-
+  raw_mat %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  geneid_converter(annot) %>%
+  rename(gene_id = external_gene_name) %>%
+  select(c("gene_id", contains("UF"))) %>%
+  format_for_beready(the_gene_set, pheno, uf_finders) %>%
+  # remove samples which did not have any expression in the housekeeper genes and were NaN
+  filter(if_all(where(is_bare_numeric), ~ !is.nan(.x) | !is.na(.x)))
+
+test_dat <-
+  raw_mat_test %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  ## reannotate with HUGO
+  geneid_converter(annot) %>%
+  ## do the stupid name conversion again
+  rename(gene_id = external_gene_name) %>%
+  format_for_beready(the_gene_set, pheno_test, uf_finders)
+
+```
+
+```{r, child = "./model_visualise_summarise.rmd"}
+## use child rmarkdown document for visualisation
+```
+
+### UF + Biopsy training samples | UF housekeepers
+
+```{r warning = F, message = F}
+
+## now format the data for beready and normalise the counts with hs
+ref_dat <-
+  raw_mat %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  geneid_converter(annot) %>%
+  rename(gene_id = external_gene_name) %>%
+  format_for_beready(the_gene_set, pheno, uf_finders) %>%
+  # remove samples which did not have any expression in the housekeeper genes and were NaN
+  filter(if_all(where(is_bare_numeric), ~ !is.nan(.x) | !is.na(.x)))
+  
+## test set is recycled
+```
+
+```{r, child = "./model_visualise_summarise.rmd"}
+## use child rmarkdown document for visualisation
+```
+

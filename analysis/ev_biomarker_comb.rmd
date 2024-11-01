@@ -1,0 +1,1914 @@
+---
+title: "EV-biomarker study - combined dataset"
+author: Alvin Meltsov
+date: "Compiled on `r format(Sys.time(), '%d/%m/%y')`"
+output:
+  rmdformats::robobook:
+    number_sections: true
+    code_folding: hide
+    fig_width: 8
+    fig_height: 6
+---
+
+# Prelude: Setup environment
+
+## Load data and environment
+
+Setup the environment and load dependencies, defined in external `back.R` script:
+
+1. Load the dependencies, set up multithreading.
+2. Set color groups and values.
+3. Define convenience functions for preprocessing and visualisation.
+4. Load and transform phenotype data and the data matrix.
+5. Query BioMart for gene annotation and alternative names.
+6. Load also important gene lists.
+7. And after all that, load the combined dataset itself.
+
+```{r warning = F, message = F}
+## !RUNTHIS
+## load the project dependencies
+source("./scripts/load_deps.R")
+## load the model metrics functions
+source("./scripts/metrics_functions.R")
+
+## check if theres a R data object already, othewise run the data muncher
+# and save the preprocessed data into the RData
+# use "comb_dataobj" to avoid conflict with "dataobj"
+comb_data_subfolder <- "./data/combined/"
+dataobj <- paste0(comb_data_subfolder, "ev_data_comb.RData")
+if (file.exists(dataobj)) {
+  load(dataobj)
+} else {
+  ## load in the backend data muncher with arguments
+  commandArgs <- function(...) list( comb_data_subfolder = comb_data_subfolder )
+  dir.create(comb_data_subfolder, showWarnings = F)
+  invisible(source("./scripts/de_comb_runner.R"))
+  save.image(file = dataobj)
+}
+
+## generate some dataformats
+comb_expr <-
+  comb_batch %>%
+  transform_count_mat(comb_pheno)
+
+comb_expr_tpm <-
+  comb_batch_tpm %>%
+  transform_count_mat(comb_pheno)
+
+```
+
+```{r warning = F, message = F}
+
+barplotter <- function(phenotype_obj, title_text = "Training samples")
+  phenotype_obj %>%
+    ggplot(aes(cyclephase, fill = group)) +
+    geom_bar() +
+    theme_thesis() +
+    xlab("Phases") +
+    ylab("Number of samples") +
+    ggtitle(title_text) +
+    theme(plot.title = element_text()) +
+    scale_fill_manual(values = status_grouping)
+
+comb_pheno %>% barplotter | pheno_test %>% barplotter(title = "Testing samples")
+
+```
+
+## Look at general clustering of samples {.tabset}
+
+### PCA
+
+First 3 components over all the genes.
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = global_expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### UMAP
+
+But for large and poorly normalised data we are better off using the UMAP algrithm.
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = global_expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    type = "scatter",
+    text = ~ paste0(samplename),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### Correlation heatmap
+
+```{r warning = F, message = F}
+
+cor_ht <-
+  comb_expr_tpm %>%
+  select(-c("cyclephase", "group")) %>%
+  column_to_rownames("samplename") %>%
+  as.matrix %>%
+  t %>%
+  cor(method = "spearman") %>%
+  heatmaply_cor(
+    limits = c(0, 1),
+    col_side_colors = comb_expr_tpm %>% select(where(is.character)) %>% column_to_rownames("samplename"),
+    row_side_colors = comb_expr_tpm %>% select(where(is.character)) %>% column_to_rownames("samplename"),
+    showticklabels = c(F, F)
+  )
+
+cor_ht
+
+```
+
+
+## Run DESeq2, edgeR and limma-voom {.tabset}
+
+Here we run standard differentation analysis toolsets DESeq2 and limma-voom for all the samples and all the comparisons (BH=0.1). Therefore, we look at differences between successive mens cycle phase:
+
+* UF:
+  * Proliferative vs LH2/3
+  * LH2/3 vs LH7/8
+  * LH7/8 vs LH11/13
+* Biopsy:
+  * Proliferative vs LH2/3
+  * LH2/3 vs LH7/8
+  * LH7/8 vs LH11/13
+
+... and every comparison between the UF and Biopsy within the same cycle group (ie UF-LH2/3 vs Biopsy-LH2/3).
+
+### UF {.tabset}
+
+Venn diagram of DE genes and differential analysis results tables of DE genes for the **UF** samples:
+
+```{r warning = F, message = F}
+
+p1 <-
+  uf_out_join %>%
+  filter(if_any(contains("deseq_"))) %>%
+  ggplot(aes(A = deseq_pro_vs_pre, B = deseq_pre_vs_rec, C = deseq_rec_vs_post)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("Pro vs. LH2", "LH2 vs LH7", "LH7 vs LH12")
+  ) + theme_thesis_venn() + ggtitle("DESeq2 significant DE genes")
+
+p2 <-
+  uf_out_join %>%
+  filter(if_any(contains("voom_"))) %>%
+  ggplot(aes(A = voom_pro_vs_pre, B = voom_pre_vs_rec, C = voom_rec_vs_post)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("Pro vs. LH2", "LH2 vs LH7", "LH7 vs LH12")
+  ) + theme_thesis_venn() + ggtitle("voom significant DE genes")
+
+p1 | p2
+
+uf_out_join %>% downtable(filterable = T, searchable = T, defaultPageSize = 5)
+
+```
+
+Collect the DE different genes from **DESeq2** and **limma-voom**:
+
+#### DESeq2: {.tabset}
+
+##### Proliferative vs Pre-receptive
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+deseq_res_phase$UF[[1]] %>%
+  rename("{names(deseq_res_phase$UF[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Pre-receptive vs Receptive
+```{r warning = F, message = F}
+deseq_res_phase$UF[[2]] %>%
+  rename("{names(deseq_res_phase$UF[2])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Receptive vs Post-receptive
+```{r warning = F, message = F}
+deseq_res_phase$UF[[3]] %>%
+  rename("{names(deseq_res_phase$UF[3])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+#### limma-voom: {.tabset}
+
+##### Proliferative vs Pre-receptive
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+voom_res_phase$UF[[1]] %>%
+  rename("{names(voom_res_phase$UF[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Pre-receptive vs Receptive
+```{r warning = F, message = F}
+voom_res_phase$UF[[2]] %>%
+  rename("{names(voom_res_phase$UF[2])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Receptive vs Post-receptive
+```{r warning = F, message = F}
+voom_res_phase$UF[[3]] %>%
+  rename("{names(voom_res_phase$UF[3])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+
+### Biopsy {.tabset}
+
+Venn diagram of DE genes and differential analysis results tables of DE genes for the **biopsy** samples:
+
+```{r warning = F, message = F}
+
+p1 <-
+  bio_out_join %>%
+  filter(if_any(contains("deseq_"))) %>%
+  ggplot(aes(A = deseq_pro_vs_pre, B = deseq_pre_vs_rec, C = deseq_rec_vs_post)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("Pro vs. LH2", "LH2 vs LH7", "LH7 vs LH12")
+  ) + theme_thesis_venn() + ggtitle("DESeq2 significant DE genes")
+
+p2 <-
+  bio_out_join %>%
+  filter(if_any(contains("voom_"))) %>%
+  ggplot(aes(A = voom_pro_vs_pre, B = voom_pre_vs_rec, C = voom_rec_vs_post)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("Pro vs. LH2", "LH2 vs LH7", "LH7 vs LH12")
+  ) + theme_thesis_venn() + ggtitle("voom significant DE genes")
+
+p1 | p2
+
+bio_out_join %>% downtable(filterable = T, searchable = T, defaultPageSize = 5)
+
+```
+
+Collect the DE different genes from **DESeq2** and **limma-voom**:
+
+#### DESeq2: {.tabset}
+
+##### Proliferative vs Pre-receptive
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+deseq_res_phase$biopsy[[1]] %>%
+  rename("{names(deseq_res_phase$biopsy[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Pre-receptive vs Receptive
+```{r warning = F, message = F}
+deseq_res_phase$biopsy[[2]] %>%
+  rename("{names(deseq_res_phase$biopsy[2])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Receptive vs Post-receptive
+```{r warning = F, message = F}
+deseq_res_phase$biopsy[[3]] %>%
+  rename("{names(deseq_res_phase$biopsy[3])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+#### limma-voom: {.tabset}
+
+##### Proliferative vs Pre-receptive
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+voom_res_phase$biopsy[[1]] %>%
+  rename("{names(voom_res_phase$biopsy[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Pre-receptive vs Receptive
+```{r warning = F, message = F}
+voom_res_phase$biopsy[[2]] %>%
+  rename("{names(voom_res_phase$biopsy[2])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Receptive vs Post-receptive
+```{r warning = F, message = F}
+voom_res_phase$biopsy[[3]] %>%
+  rename("{names(voom_res_phase$biopsy[3])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+### UF vs biopsy {.tabset}
+
+Venn diagram of DE genes and differential analysis results tables of DE genes for the **biopsy** samples in one receptivity group when compared to matching receptivity group in **UF** set:
+
+```{r warning = F, message = F}
+
+p1 <-
+  out_join %>%
+  filter(if_any(contains("deseq_"))) %>%
+  ggplot(aes(A = deseq_pro, B = deseq_pre, C = deseq_rec, D = deseq_post)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("Prolif", "LH2", "LH7", "LH12")
+  ) + theme_thesis_venn() + ggtitle("DESeq2 significant DE genes")
+
+p2 <-
+  out_join %>%
+  filter(if_any(contains("voom_"))) %>%
+  ggplot(aes(A = voom_pro, B = voom_pre, C = voom_rec, D = voom_post)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("Prolif", "LH2", "LH7", "LH12")
+  ) + theme_thesis_venn() + ggtitle("voom significant DE genes")
+
+p1 | p2
+
+out_join %>% downtable(filterable = T, searchable = T, defaultPageSize = 5)
+
+```
+
+Collect the DE different genes from **DESeq2** and **limma-voom**:
+
+#### DESeq2: {.tabset}
+
+##### Proliferative - UF vs Bio
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+deseq_res_group[[1]]$UF_vs_biopsy %>%
+  rename("{names(deseq_res_group[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Pre-receptive - UF vs Bio
+```{r warning = F, message = F}
+deseq_res_group[[2]]$UF_vs_biopsy %>%
+  rename("{names(deseq_res_group[2])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Receptive - UF vs Bio
+```{r warning = F, message = F}
+deseq_res_group[[3]]$UF_vs_biopsy %>%
+  rename("{names(deseq_res_group[3])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Post-receptive - UF vs Bio
+```{r warning = F, message = F}
+deseq_res_group[[4]]$UF_vs_biopsy %>%
+  rename("{names(deseq_res_group[4])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+#### limma-voom: {.tabset}
+
+##### Proliferative - UF vs Bio
+```{r warning = F, message = F}
+## sadly reactable does not work in loops...
+voom_res_group[[1]]$UF_vs_biopsy %>%
+  rename("{names(voom_res_group[1])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Pre-receptive - UF vs Bio
+```{r warning = F, message = F}
+voom_res_group[[2]]$UF_vs_biopsy %>%
+  rename("{names(voom_res_group[2])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Receptive - UF vs Bio
+```{r warning = F, message = F}
+voom_res_group[[3]]$UF_vs_biopsy %>%
+  rename("{names(voom_res_group[3])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+##### Post-receptive - UF vs Bio
+```{r warning = F, message = F}
+voom_res_group[[4]]$UF_vs_biopsy %>%
+  rename("{names(voom_res_group[4])}" := "locus") %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+```
+
+## TODO: Check the reference samples
+
+The data was sequenced in two batches, with the exception of sample HUT71. This same biopsy sample was sequenced in both batches, allowing us to have a control sample to assess the similiarity of batches, and in the case of bias, use it to correct for batch effects.
+
+# TODO: Are UF-biopsy paired samples similar?
+
+# Other genesets {.tabset}
+
+Here we apply the beREADY model for the counts. Due to large number of samples having bad coverage of the housekeeper genes, we apply here a slight modification to the geometric mean normalisation step. Namely, we use shifted logarithm instead of the natural logarithm found in the geometric mean calculation. Therefore these scores may not be completely comparable with the reference samples.
+
+For other genesets, we use TPM normalised counts.
+
+## beREADY {.tabset}
+
+```{r warning=F, message=F}
+
+# use this function to apply the geometric mean on the counts
+geom_norm_col <- function(
+    dat,
+    vals_from = "molecule_count",
+    finders = c("CYC1", "HMBS", "TBP", "SDHA"),
+    .rename = F
+    ) {
+  dat %>%
+    select(-where(is.numeric) | one_of(vals_from)) %>%
+    pivot_wider(
+      names_from = c("sample", "batch"),
+      names_sep = ">",
+      values_from = all_of(vals_from)
+    ) %>%
+    mutate_if(is.numeric, function(x) {
+      x / exp(mean(log(x[.$locus %in% finders])))
+    }) %>%
+    pivot_longer(where(is.numeric),
+      names_to = c("sample", "batch"),
+      names_sep = ">",
+      values_to = ifelse(.rename, vals_from, "norm_count")
+    )
+}
+
+br_genset <- c(beready_genes, finders)
+
+expr_dat <-
+  comb_expr %>%
+    select(
+      c("samplename", "cyclephase", "group", 
+      br_genset[br_genset %in% colnames(.)])) %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    mutate(external_gene_name = replace(external_gene_name, NA, 0))
+
+norm_test_dat <-
+  expr_dat %>%
+    rename(
+      locus = external_gene_name,
+      sample = samplename,
+      batch = group
+    ) %>%
+    select(-cyclephase) %>%
+    # apply the shifted logarithm geom. normalisation
+    geom_norm_col %>%
+    pivot_wider(names_from = "locus", values_from = "norm_count")
+
+## TMP
+model_obj <-
+  silent_beready_model(
+    tacseqApp::controls_data$`READY NC controls`,
+    tacseqApp::targets_data$`Dynamic filtering geneset`,
+    norm_test_dat
+  )
+
+```
+
+
+### Shifted lognorm counts
+
+Here we subset the genes in the beREADY assay, do shifted log-normalisation and check how the expression rates differ between samplescheck how the expression rates differ between samples.
+
+```{r warning = F, message = F, fig.height = 12}
+
+expr_dat %>%
+  filter(external_gene_name %in% beready_genes) %>%
+  distinct(.keep_all = T) %>%
+  ggplot(aes(log2(molecule_count + 1), external_gene_name, fill = group)) +
+  geom_boxplot() +
+  theme_thesis() +
+  xlab("") +
+  ylab("Molecule counts log2") +
+  scale_fill_manual(values = status_grouping) +
+  scale_y_discrete(limits = rev)
+
+```
+
+As one can see, sample have a pretty similar expressional profile, therefore they shouldnt really differ in receptivity testing too.
+
+### PCA with reference samples
+
+First two principal components of the classes with the beREADY reference sampleset. The shapes here represent the original sample class and the colors the beREADY class predictions.
+
+```{r warning = F, message = F}
+
+shape_grouping <- c("LH2"  = 6, "LH7" = 5, "LH12" = 2, "Prolif" = 4)
+add_coloring <- c(
+  "LH2" = color_grouping_alt[["pre"]],
+  "LH7" = color_grouping_alt[["rec"]],
+  "LH12" = color_grouping_alt[["post"]],
+  "Prolif" = color_grouping_alt[["pro"]]
+  )
+
+## make the PCA object for later on
+expr_pca <-
+  model_obj %$%
+  { join_model_pca(pca_all, score_table) } %>%
+  left_join(
+    comb_pheno %>% rename(type = group), by = c("sample" = "samplename")
+  ) %>%
+  mutate(
+    group = case_when(
+    cyclephase == "pro" ~ "Prolif",
+    cyclephase == "pre" ~ "LH2",
+    cyclephase == "rec" ~ "LH7",
+    cyclephase == "post" ~ "LH12",
+    T ~ group
+  )) %>%
+  ## exclude no-result smales
+  filter(label != "No result")
+
+pca_w_fields <- function(pca_obj, shapes, coloring)
+  pca_obj %>%
+  filter(group != "Reference") %>%
+  ggplot(aes(PC1, PC2, label = sample, color = label, shape = group)) +
+  stat_density2d(
+    data = pca_obj %>% filter(group == "Reference"),
+    mapping = aes(x = PC1, y = PC2, fill = label, alpha = after_stat(level)),
+    geom = "polygon",
+    bins = 5,
+    contour_var = "ndensity",
+    inherit.aes = F,
+    show.legend = F
+  ) +
+  geom_point(size = 3, stroke = 1) +
+  labs(color = "") +
+  scale_color_manual(values = coloring) +
+  scale_alpha_continuous(limits = c(0, 20), breaks = seq(0, 10, by = 2)) +
+  scale_shape_manual(values = shapes) +
+  # coord_cartesian(xlim = c(NA, 6)) +
+  theme_thesis() +
+  theme(
+    legend.position = c(.85, .15),
+    # panel.grid.minor = element_line(),
+    legend.direction = "vertical",
+    legend.text.align = 0,
+    # legend.box.just = 0,
+    legend.box = "vertical"
+ )
+
+```
+
+Plot it for both UF and for biopsy separate:
+
+```{r warning = F, message = F}
+
+uf_pca <- pca_w_fields(
+  expr_pca %>% filter(type == "UF" | group == "Reference"),
+  shape_grouping,
+  c(color_grouping, add_coloring)
+)
+
+bio_pca <- pca_w_fields(
+  expr_pca %>% filter(type == "biopsy" | group == "Reference"),
+  shape_grouping,
+  c(color_grouping, add_coloring)
+)
+
+(uf_pca | bio_pca) +
+  plot_annotation(
+    title = "PCA with beREADY reference samples",
+    subtitle = "
+      PCA of UF (A) and biopsy (B) samples with beREADY reference samples.\n
+      Colors represent predicted classes, shapes the original cyclephase of the sample.",
+    tag_levels = "A",
+    theme = theme_thesis_venn()
+    )
+
+```
+
+And add the results table. #TODO add accuracy metrics and the reference receptivity groups.
+
+```{r warning = F, message = F}
+
+model_obj$score_table %>%
+  downtable(sortable = T, filterable = T)
+
+inner_join(model_obj$score_table, comb_pheno %>% filter(group == "UF"),  by = c("Sample Name"="samplename")) %>%
+  mutate(matched = case_when(
+    `Predicted Group` == "Pre-receptive" & cyclephase == "pre" ~ T,
+    `Predicted Group` == "Late-Receptive" & cyclephase == "rec" ~ T,
+    `Predicted Group` == "Receptive" & cyclephase == "rec" ~ T,
+    `Predicted Group` == "Early-Receptive" & cyclephase == "rec" ~ T,
+    `Predicted Group` == "Post-receptive" & cyclephase == "post" ~ T,
+    `Predicted Group` == "Pre-receptive" & cyclephase == "pro" ~ T,
+    T ~ F
+  )) %$% 
+  matched %>%
+  mean
+
+```
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca %>%
+      mutate(
+        type = ifelse(is.na(type), "reference", type),
+        cyclephase = ifelse(is.na(cyclephase), label, group)
+        ),
+    x = ~ PC1,
+    y = ~ PC2,
+    type = "scatter",
+    text = ~ paste0(sample,
+      "<br>Receptivity group: ", cyclephase, 
+      "<br>Predicted group: ", label,
+      "<br>Dataset: ", dataset),
+    color = ~ group, 
+    colors = c(Reference = "#BBBBBB", add_coloring),
+    symbol = ~ type,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+## TED genes {.tabset}
+
+TED set consist of 73 genes that are found retrospectively via tuning ML models on previously analysed biomarker study datasets.
+
+```{r warning=F, message=F}
+
+filt_counts <-
+  comb_expr_tpm %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    filter(external_gene_name %in% ted_genes)
+
+```
+
+### Boxplot
+
+```{r warning = F, message = F, fig.height=16}
+
+filt_counts %>%
+  distinct(.keep_all = T) %>%
+  ggplot(aes(log2(molecule_count), external_gene_name, fill = group)) +
+  geom_boxplot() +
+  theme_thesis() +
+  xlab("") +
+  ylab("Molecule counts log2") +
+  scale_fill_manual(values = status_grouping) +
+  scale_y_discrete(limits = rev)
+
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
+
+```
+
+### PCA
+
+```{r warning = F, message = F}
+
+filt_counts_wide <-
+  filt_counts %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "external_gene_name",
+    values_from = "molecule_count"
+    ) %>%
+  mutate(across(where(is.numeric), ~replace(., is.na(.), 0))) %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  rowwise %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  ungroup
+
+expr_pca <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### UMAP
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+
+```
+
+
+## ERA genes {.tabset}
+
+```{r warning=F, message=F}
+
+filt_counts <-
+  comb_expr_tpm %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    filter(external_gene_name %in% era_genes)
+
+```
+
+### Boxplot
+
+There are >200 genes, so this is not gonna make sense...
+
+```{r warning = F, message = F, fig.height=24}
+
+filt_counts %>%
+  distinct(.keep_all = T) %>%
+  ggplot(aes(log2(molecule_count + 1), external_gene_name, fill = group)) +
+  geom_boxplot() +
+  theme_thesis() +
+  xlab("") +
+  ylab("Molecule counts log2") +
+  scale_fill_manual(values = status_grouping) +
+  scale_y_discrete(limits = rev)
+
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
+
+```
+
+### PCA
+
+```{r warning = F, message = F}
+
+filt_counts_wide <-
+  filt_counts %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "external_gene_name",
+    values_from = "molecule_count"
+    ) %>%
+  mutate(across(where(is.numeric), ~replace(., is.na(.), 0))) %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  rowwise %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  ungroup
+
+expr_pca <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+
+### UMAP
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+# Biomarkers for UF samples
+
+## Clustering with the geneset from DE results
+
+Here we create a possible set of biomarkers from the DESeq2 DE comparisons between cycle types and/or sample types. We define two sets here:
+
+1. UF only biomarkers, with the following set equation:
+
+$$ F_{UF} = (UF_{pro-vs-pre} \cup UF_{pre-vs-rec}) \cap (UF_{pre-vs-rec} \cup UF_{rec-vs-post}) \\ \cap (UF_{rec_vs_post} \cup UF_{pro-vs-pre}) $$
+
+2. Biopsy + UF biomarkers, with the following set equation:
+
+$$ F_{UF} \cup F_{biopsy} $$
+
+Therefore the biopsy + UF biomarker set is a subset of the `UF_biomarker` set. This set is found in a efficient manner of converting boolean values to numerical and filtering out genes with more than 1 truth values.
+
+The list of genes with annotations are here for the UF only biomarkers:
+
+```{r warning = F, message = F}
+# !RUNTHIS
+uf_genes <-
+  uf_out_join %>%
+  select(c("locus", contains("deseq_"))) %>%
+  rowwise %>%
+  mutate(sumlogic = sum(c_across(where(is.logical)), na.rm = T)) %>%
+  filter(sumlogic >= 2) %$%
+  locus
+
+annot %>%
+  filter(external_gene_name %in% uf_genes) %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+  
+
+bio_genes <-
+  bio_out_join %>%
+  select(c("locus", contains("deseq_"))) %>%
+  rowwise %>%
+  mutate(sumlogic = sum(c_across(where(is.logical)), na.rm = T)) %>%
+  filter((sumlogic >= 2) & (locus %in% uf_genes)) %$%
+  locus
+
+annot %>%
+  filter(external_gene_name %in% bio_genes) %>%
+  downtable(filterable = T, searchable = T, defaultPageSize = 5)
+
+```
+
+Following clustering algorithms are first "trained" on just UF samples, and then all samples are projected onto it.
+
+### UF set {.tabset}
+
+```{r warning=F, message=F}
+
+filt_counts <-
+  comb_expr_tpm %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    filter(external_gene_name %in% uf_genes & group == "UF")
+
+```
+
+
+#### PCA
+
+```{r warning = F, message = F}
+
+filt_counts_wide <-
+  filt_counts %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "external_gene_name",
+    values_from = "molecule_count"
+    ) %>%
+  mutate(across(where(is.numeric), ~replace(., is.na(.), 0))) %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  rowwise %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  ungroup
+
+expr_pca <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+#### UMAP
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  filt_counts_wide %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+### UF + biopsy set {.tabset}
+
+```{r warning=F, message=F}
+
+filt_counts <-
+  comb_expr_tpm %>%
+    pivot_longer(
+      where(is_bare_numeric),
+      names_to = "external_gene_name",
+      values_to = "molecule_count"
+    ) %>%
+    filter(external_gene_name %in% bio_genes)
+
+```
+
+#### PCA
+
+```{r warning = F, message = F}
+
+filt_counts_wide <-
+  filt_counts %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "external_gene_name",
+    values_from = "molecule_count"
+    ) %>%
+  mutate(across(where(is.numeric), ~replace(., is.na(.), 0))) %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  rowwise %>%
+  filter(if_any(where(is.numeric), ~ sum(.) > 10)) %>%
+  ungroup
+
+expr_pca <-
+  filt_counts_wide %>%
+  filter(samplename %in% (pheno %>% filter(group == "UF") %$% samplename)) %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca,
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+#### UMAP
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  filt_counts_wide %>%
+  filter(samplename %in% (pheno %>% filter(group == "UF") %$% samplename)) %>%
+  recipe %>%
+  update_role("samplename", new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = filt_counts_wide) %>%
+  left_join(comb_pheno, by = "samplename") %>%
+  filter(!is.na(samplename))
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap,
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ paste0(samplename, "<br>Receptivity group:", cyclephase),
+    color = ~ cyclephase,
+    colors = color_grouping_alt,
+    symbol = ~ group,
+    symbols = c("circle", "circle-open"),
+    marker = list(size = 6),
+    mode = "markers"
+  )
+
+```
+
+## New housekeepers
+
+Here we read in the housekeepers from the [HRT database](https://housekeeping.unicamp.br/?homePageHuman), also described in this [article](https://academic.oup.com/nar/article/49/D1/D947/5871367). Then, we check if those genes are non-differential in any comparison between the receptivity groups and if they are highly expressed in UF samples. After all that we select **four** least differential, most expressed genes based on our dataset.
+
+The parameters used on the website were:
+
+* The **Human** atlas
+* Our **Uterus** dataset
+* At least log RPKM expression rate of **69** (so that there are roughly 100 genes included with high expression rates)
+
+```{r warning = F, message = F}
+# !RUNTHIS
+# load in
+hs_set <- read_csv("./data_raw/hrt_uterus_rpkm69.csv")
+
+# show the table of housekeepers
+hs_set %>% downtable(filterable = T)
+
+# transform it to match local data
+hs_set %<>%
+  ## select only rank column as others are not informative
+  select(c("Rank", "Gene Symbol", "Ensembl ID", "Normalized Expression")) %>%
+  rename(
+    ensembl_transcript_id = `Ensembl ID`,
+    external_gene_name = `Gene Symbol`,
+    hrt_rank = Rank,
+    norm_mean_expr = `Normalized Expression`
+  )
+
+```
+
+We would like to get housekeepers that are well expressed, but at the same time not too highly expressed so that it wouldnt' most of the reaction mixture.
+
+Let's see how those genes express in both our data and in the reference as mean. Here we calculate TMM RPKM values for the genes with the `edgeR` package as the reference values were also normalised in that way.
+
+Then we'll exclude those genes that were in any of the DE genes group.
+
+```{r warning = F, message = F}
+# !RUNTHIS
+gene_mat <-
+  comb_batch %>%
+  select(c("gene_id", comb_pheno %>% filter(group == "UF") %$% samplename)) %>%
+  rename(external_gene_name = gene_id)
+
+edger_gene_len <-
+  gene_len %>%
+  filter(gene_id %in% gene_mat$external_gene_name) %>%
+  # match the order of the gene matrix
+  arrange(match(
+    gene_id,
+    gene_mat %>%
+      filter(external_gene_name %in% gene_len$gene_id) %$%
+      external_gene_name
+  )) %$%
+  len
+
+norm_rpkm_mat <-
+  gene_mat %>%
+  column_to_rownames("external_gene_name") %>%
+  edgeR::DGEList() %>%
+  edgeR::calcNormFactors() %>%
+  edgeR::rpkm(gene.length = edger_gene_len) %>%
+  as_tibble(rownames = "external_gene_name") %>%
+  # and finally, filter out genes of interest for less comp overhead
+  filter(external_gene_name %in% hs_set$external_gene_name)
+
+norm_rpkm_mat %<>%
+  ## now calculate the mean per gene, the sds and the f-scores
+  mutate(
+    external_gene_name = external_gene_name,
+    mean_rpkm =
+      rowMeans(across(where(is_bare_numeric)), na.rm = T),
+    sds_rpkm =
+      matrixStats::rowSds(as.matrix(across(where(is_bare_numeric)), na.rm = T)),
+    # do the ANOVA for every gene and return the F-stat
+    fstat_rpkm =
+      across(everything()) %>%
+      pivot_longer(where(is_bare_numeric), names_to = "samplename", values_to = "rpkms") %>%
+      inner_join(comb_pheno %>% select(-c("group", "dataset")), by = "samplename") %>%
+      group_by(external_gene_name) %>%
+      # ... and run anova with the cyclephase variables in mind
+      group_map(~ tidy(aov(rpkms ~ cyclephase, data = .x))$statistic[1]) %>%
+      unlist,
+    .keep = "unused"
+  )
+
+norm_rpkm_mat %<>%
+  ## and add the housekeeper atlas table, the intersect just to be sure
+  inner_join(
+    hs_set %>% select(c("norm_mean_expr", "external_gene_name")),
+    by = "external_gene_name"
+    ) %$%
+  bind_rows(
+    "HRT Atlas" = tibble(external_gene_name, norm_mean_expr),
+    "HUT set" = tibble(external_gene_name, mean_rpkm, sds_rpkm, fstat_rpkm),
+    .id = "dataset"
+  ) %>%
+  # harmonise the norm mean columns of atlas and our set
+  mutate(norm_mean_expr = ifelse(is.na(mean_rpkm), norm_mean_expr, mean_rpkm)) %>%
+  select(-mean_rpkm)
+
+```
+
+Potential housekeepers **before** filtering out with DE genes: `r dim(norm_rpkm_mat)[1]`
+
+```{r warning = F, message = F}
+# !RUNTHIS
+# now exclude genes in any of the DE group
+norm_rpkm_mat %<>% filter(!(external_gene_name %in% c(uf_out_join$locus, bio_out_join$locus)))
+
+```
+
+Potential housekeepers **after** filtering out with DE genes: `r dim(norm_rpkm_mat)[1]`
+
+```{r warning = F, message = F}
+
+# do a side-by-side violin plot of the expression rate of housekeepers in reference and in our data
+breaks <- 10^(-10:10)
+minor_breaks <- rep(1:9, 21)*(10^rep(-10:10, each = 9))
+norm_rpkm_mat %>%
+  ggplot(aes(dataset, norm_mean_expr)) +
+    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+    theme_thesis() +
+    xlab("Datasets") +
+    ylab("TMM RPKM values") +
+    scale_y_log10(breaks = breaks, minor_breaks = minor_breaks) + 
+    theme(
+      panel.grid.minor = element_line(),
+      panel.grid.major = element_line()
+    )
+
+```
+
+Although comparable, and luckily not heavily skewed towards zero, the mean expressions of those genes do vary between whats expected of the HRT dataset and what we observe
+
+Lets see how many genes we get in the lower quartile region of the HRT geneset, and the second quartile of our dataset. Additionally, lets order the genes also by the F-statistic values to see the most stably expressed genes of the bunch.
+
+Genes listed in **bold** are the top 4 selected for housekeepers.
+
+```{r warning = F, message = F}
+# !RUNTHIS
+# get the .25-.5 quantile range of genes in both datasets
+uf_hs <-
+  norm_rpkm_mat %>%
+  group_by(dataset) %>%
+  mutate(
+    lower_quart = quantile(norm_mean_expr, .25),
+    upper_quart = quantile(norm_mean_expr, .50)
+  ) %>%
+  ungroup %>%
+  filter(
+    # dont include the Atlas filtering, as we only care about the expression of HUT set
+    # ( dataset == "HRT Atlas" & norm_mean_expr < lower_quart ) |
+      ( dataset == "HUT set" & norm_mean_expr < upper_quart & norm_mean_expr > lower_quart )
+  ) %>%
+  select(-contains("quart"))
+
+# add ranking from the HRT dataset
+uf_hs %<>%
+  left_join(
+    hs_set %>% select(c("hrt_rank", "external_gene_name")) %>% distinct(external_gene_name, .keep_all = T),
+    by = "external_gene_name"
+  ) %>%
+  # remove the atlas dataset now to remove duplicate genes and NA's
+  filter(dataset == "HUT set") %>%
+  select(-dataset) %>%
+  # rerank the atlas ranking and rank the fstats
+  mutate(
+    hrt_rank = dense_rank(hrt_rank),
+    fstat_rank = dense_rank(fstat_rpkm),
+    sds_rank = dense_rank(sds_rpkm),
+    l2_rank = dense_rank(sqrt(hrt_rank^2 + fstat_rank^2 + sds_rank^2)),
+    geom_rank = dense_rank(sqrt(hrt_rank * fstat_rank * sds_rank))
+  ) %>%
+  # use the L2 normed ranking to arrange the genes
+  arrange(l2_rank)
+
+# select top 4 genes
+uf_finders <-
+  uf_hs %$%
+  external_gene_name %>%
+  unique %>%
+  # manually select instead
+  # .[c(1, 2, 3, 4)]
+  head(4)
+
+# look at the HUT set genes
+uf_hs %>% {
+  downtable(
+    .,
+    filterable = T,
+    rowStyle = function(index)
+      if (.$external_gene_name[index] %in% uf_finders) list(fontWeight = "bold")
+    )
+  }
+
+## write those out
+uf_hs %>% write_tsv(paste0(comb_data_subfolder, "uf_finders.tsv"))
+
+```
+
+Boxplots of the top newfound biomarker counts over cycle phases (in our training dataset) and focus on our selected genes below:
+
+```{r warning = F, message = F, fig.height=21}
+
+all_box <-
+  gene_mat %>%
+  filter(external_gene_name %in% uf_hs$external_gene_name) %>%
+  pivot_longer(where(is_bare_numeric), names_to = "samplename", values_to = "molecule_count") %>%
+  left_join(comb_pheno %>% filter(group == "UF"), by = "samplename") %>%
+  ggplot(aes(molecule_count, external_gene_name, fill = cyclephase)) +
+  geom_boxplot() +
+  theme_thesis() +
+  scale_x_log10(breaks = breaks, minor_breaks = minor_breaks) +
+  xlab("Molecule counts log10") +
+  ylab("UF housekeeper candidates") +
+  scale_fill_manual(values = color_grouping_alt) +
+  theme(
+    panel.grid.minor = element_line(),
+    panel.grid.major = element_line()
+  )
+
+select_box <-
+  gene_mat %>%
+  filter(external_gene_name %in% uf_finders) %>%
+  pivot_longer(where(is_bare_numeric), names_to = "samplename", values_to = "molecule_count") %>%
+  left_join(comb_pheno %>% filter(group == "UF"), by = "samplename") %>%
+  ggplot(aes(molecule_count, external_gene_name, fill = cyclephase)) +
+  geom_boxplot() +
+  theme_thesis() +
+  scale_x_log10(breaks = breaks, minor_breaks = minor_breaks) +
+  xlab("Molecule counts log10") +
+  ylab("UF housekeepers") +
+  scale_fill_manual(values = color_grouping_alt) +
+  theme(
+    panel.grid.minor = element_line(),
+    panel.grid.major = element_line()
+  )
+
+  
+all_box / select_box + plot_layout(ncol = 1, heights = c(5, 1))
+
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
+```
+
+
+# beREADY-EV testing
+
+In this chapter we apply the new dataset and the set of biomarkers discovered in the last chapter to run the beREADY algorithm. Due to the ability of the `tacseqApp` to use drop-in replacements of the reference sets and the biomarker sets, then well try to hotwire the model to predict receptivity.
+
+Here we apply the beREADY model with new reference data to the testing dataset of MN samples. We present the 3D general PCA space of all conditions and the prediction table. We also perform stratified 5-fold cross-validation for the training set, and in the case of the smaller geneset, we apply 20 repeats (to get close to Monte Carlo 100x cross validation).
+
+Note that in beREADY housekeepers, not all genes are expressed in the UF samples, and thus they are excluded from the analysis.
+
+```{r warning = F, message = F}
+# !RUNTHIS
+add_coloring <- c(
+  "LH2" = color_grouping_alt[["pre"]],
+  "LH7" = color_grouping_alt[["rec"]],
+  "LH12" = color_grouping_alt[["post"]],
+  "Prolif" = color_grouping_alt[["pro"]],
+  "Reference" = color_grouping_alt[["hrt"]]
+  )
+
+```
+
+## UF+Biopsy biomarkers {.tabset}
+
+Geneset of the intersection of UF and biopsy DE genes and TED genes. The Venn plot of showing the origin of selected genes:
+
+```{r warning = F, message = F}
+# !RUNTHIS
+rep_or_not <- TRUE
+
+# the gene "usage" table with added TED genes being default for all conditions
+uf_dyn_genes <-
+    bio_out_join %>%
+    filter(locus %in% c(bio_genes, ted_genes)) %>%
+    select(c("locus", contains("deseq_"))) %>%
+    distinct(locus, .keep_all = T) %>%
+    drop_na() %>%
+    rename_with(~ str_remove(.x, "deseq_"), where(is.logical))
+
+# emit a Venn diagram of the TED geneset in relation to other genes
+uf_dyn_genes %>%
+  mutate(TED = locus %in% ted_genes) %>%
+  select(-locus) %>%
+  ggplot(aes(A = pro_vs_pre, B = pre_vs_rec, C = rec_vs_post, D = TED)) +
+  geom_venn(
+    show_percentage = T, fill_alpha = 0.3
+  ) + theme_thesis_venn()
+
+uf_dyn_genes %<>%
+  rename(
+    pro = pro_vs_pre,
+    pre = pre_vs_rec,
+    post = rec_vs_post
+  ) %>%
+  mutate(across(where(is.logical), as.integer))
+  
+uf_dyn_genes %>% write_tsv(paste0(comb_data_subfolder, "uf_bio_genes.tsv"))
+
+```
+
+```{r, child = "./analysis/test_samplesets_comb.rmd"}
+## use child rmarkdown document for running the testing repeatedly
+```
+
+## UF biomarkers {.tabset}
+
+Large geneset of the UF DE genes and TED genes. The Venn plot of showing the origin of selected genes:
+
+```{r warning = F, message = F}
+# !RUNTHIS
+rep_or_not <- FALSE
+
+# the gene "usage" table with added TED genes being default for all conditions
+uf_dyn_genes <-
+    uf_out_join %>%
+    filter(locus %in% c(uf_genes, ted_genes)) %>%
+    select(c("locus", contains("deseq_"))) %>%
+    distinct(locus, .keep_all = T) %>%
+    drop_na() %>%
+    rename_with(~ str_remove(.x, "deseq_"), where(is.logical))
+
+# emit a Venn diagram of the TED geneset in relation to other genes
+uf_dyn_genes %>%
+  mutate(TED = locus %in% ted_genes) %>%
+  select(-locus) %>%
+  ggplot(aes(A = pro_vs_pre, B = pre_vs_rec, C = rec_vs_post, D = TED)) +
+  geom_venn(
+    show_percentage = T, fill_alpha = 0.3
+  ) + theme_thesis_venn()
+
+uf_dyn_genes %<>%
+  rename(
+    pro = pro_vs_pre,
+    pre = pre_vs_rec,
+    post = rec_vs_post
+  ) %>%
+  mutate(across(where(is.logical), as.integer))
+  
+uf_dyn_genes %>% write_tsv(paste0(comb_data_subfolder, "uf_genes.tsv"))
+
+```
+
+```{r, child = "./analysis/test_samplesets_comb.rmd"}
+## use child rmarkdown document for running the testing repeatedly
+```
+
+
+# Slimming down UF reference set
+
+From previous steps it looks like the combination of reference genes with the best predictive value for beREADY algorithm is the UF biomarker set with UF housekeepers. In this step we will try to slim down the large geneset we found.
+
+Well look at:
+
+* Intersection of genes with common biomarker genesets.
+* Genes with highest predicting power via factorial analysis of bootstrapped random forest model.
+
+## Refining UF biomarkers with receptivity genesets
+
+Venn diagram of genesets and also an interactive table covering all the genes.
+
+```{r warning = F, message = F}
+
+genset_comp <-
+  unique(c(ted_genes, uf_genes, beready_genes, era_genes)) %>%
+    tibble(
+      external_gene_name = .,
+      UF = . %in% uf_genes,
+      TED = . %in% ted_genes,
+      beREADY = . %in% beready_genes,
+      ERA = . %in% era_genes
+    )
+
+genset_comp %>%
+  ggplot(aes(A = UF, B = TED, C = beREADY, D = ERA)) +
+  geom_venn(
+    show_percentage = F, fill_alpha = 0.3,
+    set_names = c("UF", "TED", "beREADY", "ERA")
+  ) + theme_thesis_venn()
+
+genset_comp %>%
+  left_join(annot, by = "external_gene_name") %>%
+  downtable(filterable = T)
+
+```
+
+It appears that there is **no significant set of genes that intersect through different receptivity genesets apart from PAEP and GPX3**, and that UF DE genes are separate in their signature. This could come from different biomarkers exhibited in the EVs, or from higher noise to signal ratio due to random transcripts. Still, previous clustering shows that TED seems to be the best at increasing the predictive value of the test, so it should be included in the gene selection process nevertheless.
+
+## RF factorial analysis
+
+Build pipeline with preprocessing and split
+
+```{r warning = F, message = F}
+set.seed(88)
+
+## with finders
+the_gene_set <- c(uf_dyn_genes$locus)
+# the_gene_set <- uf_genes
+
+# the ref_dat here should be the large TED+UF geneset with bio+UF samples
+ref_dat <-
+  # raw_tpm %>%
+  # rename(ensembl_gene_id = gene_id) %>%
+  # geneid_converter(annot) %>%
+  # rename(gene_id = external_gene_name) %>%
+  comb_batch_tpm %>%
+  filter(gene_id %in% the_gene_set) %>%
+  pivot_longer(where(is_bare_numeric), names_to = "samplename", values_to = "raw_counts") %>%
+  pivot_wider(values_from = "raw_counts", names_from = "gene_id") %>%
+  left_join(pheno %>% select(-c("dataset")), by = "samplename") %>%
+  mutate(cyclephase = ifelse(cyclephase == "pro", "pre", cyclephase)) %>%
+  # filter(cyclephase != "post") %>%
+  filter(group == "UF") %>%
+  mutate(cyclephase = fct_relevel(cyclephase)) %>%
+  # Dont need the samplenames no more
+  select(-c("samplename", "group"))
+
+# create the recipe for the models
+expr_recipe <-
+  recipe(cyclephase ~ ., data = ref_dat) %>%
+  # update_role(samplename, new_role = "id") %>%
+  step_normalize(all_predictors()) %>%
+  prep()
+
+print(expr_recipe)
+
+ref_dat2 <- juice(expr_recipe)
+
+# we don't need to split training set
+# expr_split <- initial_split(ref_dat2, prop = .8, strata = cyclephase)
+# expr_train <- training(expr_split)
+# expr_test <- testing(expr_split)
+expr_train <- ref_dat2
+
+## and split into val
+expr_val <- vfold_cv(expr_train, v = 2, strata = cyclephase)
+
+```
+
+Tune the model
+
+```{r warning = F, message = F}
+set.seed(88)
+
+# replace this with xgb - boost_tree()
+tune_spec <-
+#   rand_forest(
+  boost_tree(
+    mtry = tune(),
+    min_n = tune(),
+    trees = 1000
+  ) %>%
+#   set_engine("ranger", num.threads = round(cores - 1)) %>%
+  set_engine("xgboost", nthread = 4) %>% # nthread = 1
+  set_mode("classification")
+
+workflow <-
+  workflow() %>%
+  add_model(tune_spec) %>%
+  add_recipe(expr_recipe)
+
+p <- parameters(
+  mtry(range = c(2, 32)),
+  min_n(range = c(1, 10))
+  )
+param_grid <- grid_regular(p, levels = 10)
+
+# takes about 175s ~ 3m for ~600 genes
+tic()
+tune_result <-
+  workflow %>%
+  tune_grid(
+    expr_val,
+    grid = param_grid,
+    metrics = metric_set(roc_auc)
+  )
+toc()
+
+tune_result %>%
+  collect_metrics() %>%
+  mutate(across(where(is_bare_numeric), ~ round(.x, 4))) %>%
+  downtable(sortable = T)
+
+```
+
+Collect the metrics and show the best performing model.
+
+```{r warning = F, message = F}
+
+tune_best <-
+  tune_result %>%
+  select_by_one_std_err(min_n, mtry, metric = "roc_auc")
+
+print(tune_best)
+
+tune_result %>% show_best(metric = "roc_auc")
+
+```
+
+Train the model using tuned metrics
+
+```{r warning = F, message = F}
+set.seed(88)
+
+# the last fit
+forest_model <-
+  boost_tree(
+    mtry = tune_best$mtry,
+    min_n = tune_best$min_n,
+    trees = 10000
+  ) %>%
+  set_engine("xgboost", nthread = 4, importance = "impurity") %>%
+  set_mode("classification")
+
+wflow <-
+  workflow() %>%
+  add_recipe(expr_recipe) %>%
+  add_model(forest_model)
+
+wfit <-
+  wflow %>%
+  fit(expr_train)
+
+```
+
+Predict on separated (not used in training) test set and get the accuracy
+
+```{r warning = F, message = F}
+
+test_dat <-
+  raw_tpm_test %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  geneid_converter(annot) %>%
+  filter(external_gene_name %in% colnames(ref_dat)) %>%
+  pivot_longer(where(is_bare_numeric), names_to = "samplename", values_to = "raw_counts") %>%
+  pivot_wider(values_from = "raw_counts", names_from = "external_gene_name") %>%
+  left_join(pheno_test %>% select(-c("dataset", "group")), by = "samplename") %>%
+  mutate(cyclephase = ifelse(cyclephase == "pro", "pre", cyclephase)) %>%
+  mutate(cyclephase = fct_relevel(cyclephase))
+
+preds_test <- predict(wfit, test_dat %>% select(-c("samplename", "cyclephase")))
+
+preds_test <-
+  test_dat %>%
+  select(c("samplename", "cyclephase")) %>%
+  bind_cols(preds_test) %>%
+  mutate(Hits = cyclephase == .pred_class)
+
+preds_test %>%
+  mutate(across(where(is_bare_numeric), ~ round(.x, 4))) %>%
+  downtable(filterable = T)
+
+```
+
+Hits of the RF model on the test set: `r sum(preds_test$Hits)`
+
+Accuracy of the RF model on the test set: `r sum(preds_test$Hits) / length(preds_test$Hits)`
+
+### Look at the importance of features
+
+Here we at first visualize the importance of variables used in the RF model (ie genes), and then filter out at some level the most important genes in the upper quartile of the set. After that, we create an annotated table for those samples.
+
+```{r warning = F, message = F, fig.height = 12}
+
+wfit %>%
+  extract_fit_parsnip() %>%
+  vip::vip(num_features = 50) + #, method = "firm", train = expr_train) + 
+  labs(title = "Random forest variable importance")
+
+rf_res <-
+  wfit %>%
+  extract_fit_parsnip %>%
+  vip::vi(.) %>%
+  # mutate(`Norm. Importance` = Importance * n()) %>%
+  # filter(`Norm. Importance` > 2) %>%
+  filter(Importance > quantile(Importance, 0.9)) %>%
+  rename(external_gene_name = Variable)
+
+rf_res %>%
+  left_join(annot, by = c("external_gene_name")) %>%
+  reactable(sortable = T, searchable = T)
+
+# rf_res %>%
+#   left_join(annot, by = c("locus" = "ensembl_gene_id")) %>%
+#   write_csv2("./reports/rec_rf_genes.csv")
+
+```
+
+## Filter the geneset and run beREADY again {.tabset}
+
+```{r warning = F, message = F}
+
+# the gene "usage" table with added TED genes being default for all conditions
+uf_dyn_genes <-
+    uf_out_join %>%
+    filter(locus %in% c(rf_res$external_gene_name, ted_genes)) %>%
+    select(c("locus", contains("deseq_"))) %>%
+    distinct(locus, .keep_all = T) %>%
+    drop_na() %>%
+    rename_with(~ str_remove(.x, "deseq_"), where(is.logical))
+
+# emit a Venn diagram of the TED geneset in relation to other genes
+uf_dyn_genes %>%
+  mutate(TED = locus %in% ted_genes) %>%
+  select(-locus) %>%
+  ggplot(aes(A = pro_vs_pre, B = pre_vs_rec, C = rec_vs_post, D = TED)) +
+  geom_venn(
+    show_percentage = T, fill_alpha = 0.3
+  ) + theme_thesis_venn()
+
+uf_dyn_genes %<>%
+  rename(
+    pro = pro_vs_pre,
+    pre = pre_vs_rec,
+    post = rec_vs_post
+  ) %>%
+  mutate(across(where(is.logical), as.integer))
+
+```
+
+```{r, child = "./analysis/test_samplesets_comb.rmd"}
+## use child rmarkdown document for running the testing repeatedly
+```
+
+
+# Adjusting the beREADY decision boundaries
+
+Here we wrap the beREADY model with new decision boundaries.
+
+First, let's see where are the sensible boundaries for our samples. We do observe a large discrepancy between post-receptive and late-receptive samples in the best models, so let's plot the continous "receptivity axis" with the original sample classes for every PCA subspace in our hierarchical model.
+
+Run the beREADY-EV model again with the EV+Biopsy geneset and the EV houskeepers:
+
+```{r warning = F, message = F}
+
+# the gene "usage" table with added TED genes being default for all conditions
+uf_dyn_genes <-
+    uf_out_join %>%
+    filter(locus %in% c(bio_genes, ted_genes)) %>%
+    select(c("locus", contains("deseq_"))) %>%
+    distinct(locus, .keep_all = T) %>%
+    drop_na() %>%
+    rename_with(~ str_remove(.x, "deseq_"), where(is.logical))
+
+uf_dyn_genes %<>%
+  rename(
+    pro = pro_vs_pre,
+    pre = pre_vs_rec,
+    post = rec_vs_post
+  ) %>%
+  mutate(across(where(is.logical), as.integer))
+
+## with finders
+the_gene_set <- c(uf_dyn_genes$locus, uf_finders)
+
+## now format the data for beready and normalise the counts with hs
+ref_dat <-
+  comb_batch %>%
+  select(c("gene_id", comb_pheno %>% filter(group == "UF") %$% samplename)) %>%
+  format_for_beready(the_gene_set, comb_pheno, uf_finders) %>%
+  # remove samples which did not have any expression in the housekeeper genes and were NaN
+  filter(if_all(where(is_bare_numeric), ~ !is.nan(.x) | !is.na(.x)))
+
+test_dat <-
+  raw_mat_test %>%
+  rename(ensembl_gene_id = gene_id) %>%
+  ## reannotate with HUGO
+  geneid_converter(annot) %>%
+  ## do the stupid name conversion again
+  rename(gene_id = external_gene_name) %>%
+  format_for_beready(the_gene_set, pheno_test, uf_finders)
+
+## and run the model with the input reference data.
+model_obj <-
+  silent_beready_model(
+    # the reference data
+    ref_dat,
+    # dynamic filtering geneset
+    uf_dyn_genes,
+    # and the data we want to evalate
+    test_dat,
+    is_dyn_filt = T
+  )
+
+```
+
+Look on a simple line plot where those test samples where in relation to the "receptivity axes" of different model comparisons.
+
+```{r warning = F, message = F, fig.height = 8}
+
+rec_axes <-
+  bind_rows(
+    "all" = model_obj$dists_all %>% select(c("sample", starts_with("norm_"))),
+    "pre_rec" = model_obj$dists_pre %>% select(c("sample", starts_with("norm_"))),
+    "rec_post" = model_obj$dists_post %>% select(c("sample", starts_with("norm_"))),
+    .id = "comparison"
+  ) %>%
+  rename(samplename = sample) %>%
+  left_join(pheno_test, by = "samplename") %>%
+  pivot_longer(starts_with("norm_"), values_to = "rec_axis", names_to = "rec_class")
+
+rec_axes %>%
+  drop_na(rec_axis) %>%
+  ggplot(aes(rec_axis, rec_class, color = cyclephase)) +
+  geom_point() + 
+  facet_wrap(vars(comparison), ncol = 1, scales = "free") +
+  scale_fill_manual(values = color_grouping_alt) +
+  theme_minimal()
+
+```
+
+And the same plot for reported percentages:
+
+```{r warning = F, message = F}
+
+rec_axes <-
+  model_obj$score_table %>%
+  rename(samplename = `Sample Name`) %>%
+  left_join(pheno_test, by = "samplename") %>%
+  pivot_longer(ends_with("(%)"), values_to = "rec_axis", names_to = "rec_class")
+
+rec_axes %>%
+  drop_na(rec_axis) %>%
+  ggplot(aes(rec_axis, rec_class, color = cyclephase)) +
+  geom_point() + 
+  scale_fill_manual(values = color_grouping_alt) +
+  theme_minimal()
+
+```
+
+So, let's set the new boundary for the Post-receptive to Receptive to start from 60% and revisit the accuracy:
+
+```{r warning = F, message = F}
+
+model_obj$score_table %<>%
+  mutate(`Predicted Group` = 
+    case_when(
+      `Post-receptive (%)` > 60 ~ "Post-receptive",
+      `Post-receptive (%)` > 40 ~ "Late-receptive",
+      T ~ `Predicted Group`
+      ))
+
+res_table <-
+  beready_results_formatter(
+    model_obj$score_table,
+    test_dat %>% select(c("sample", "group"))
+  )
+
+res_table %>%
+  downtable(sortable = T, filterable = T)
+
+
+vfold_split <-
+  vfold_cv(
+    ref_dat %>% select(-batch),
+    v = 5,
+    repeats = ifelse(rep_or_not, 20, 1),
+    strata = group
+    )
+
+# run the CV runner in parallel and summarise the results
+cv_results <-
+  foreach::foreach(that_split = vfold_split$splits, .combine = "bind_rows", .inorder = F) %dopar% {
+    beready_cv_fold(that_split, uf_dyn_genes)
+  } %>%
+  # select only the interesting values
+  filter(str_detect(Metrics, "Acc")) %>%
+  # pivot longer for grouping
+  pivot_longer(where(is_bare_numeric), values_to = "Score", names_to = "Dataset") %>%
+  # group by dataset type and summarise
+  group_by(Dataset, Metrics) %>%
+  # remove NAs in some cases to still get results
+  summarise(`CV Accuracy` = mean(Score, na.rm = T)) %>%
+  pivot_wider(values_from = "CV Accuracy", names_from = "Dataset") %>%
+  mutate(Metrics = paste("CV", Metrics), .before = everything())
+
+# get the summary stats from the testing set and combine it with crossval
+beready_summary_stats(res_table) %>%
+  bind_rows(cv_results) %>%
+  mutate(across(where(is_bare_numeric), ~ round(.x, 4))) %>%
+  downtable(sortable = T, defaultPageSize = 15)
+
+```
+
+# Session info
+
+```{r warning = F, message = F}
+
+sessionInfo()
+
+```

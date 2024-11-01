@@ -1,0 +1,578 @@
+---
+title: "EV-biomarker study - xCell analysis"
+author: Alvin Meltsov
+date: "Compiled on `r format(Sys.time(), '%d/%m/%y')`"
+output:
+  rmdformats::robobook:
+    number_sections: true
+    code_folding: hide
+    fig_width: 8
+    fig_height: 6
+---
+
+# Prelude: Setup environment
+
+## Load data and environment
+
+Setup the environment and load dependencies, defined in external `back.R` script:
+
+1. Load the dependencies, set up multithreading.
+2. Set color groups and values.
+3. Define convenience functions for preprocessing and visualisation.
+4. Load and transform phenotype data and the data matrix.
+5. Query BioMart for gene annotation and alternative names.
+6. Load also important gene lists.
+
+```{r warning = F, message = F}
+
+## load the project dependencies
+source("./deps.R")
+
+## check if theres a R data object already, othewise run the data muncher 
+# and save the preprocessed data into the RData
+dataobj <- "./data/ev_data_filt.RData"
+if (file.exists(dataobj)) {
+  load(dataobj)
+} else {
+  ## load in the backend data muncher with arguments
+  commandArgs <- function(...)
+    list(
+      switch_sample = "HUT23",
+      remove_sample = c("HUT71_UF", "HUT10_UF", "HUT17_UF", "HUT1_UF")
+      ) #  c("HUT71_UF", "HUT1_UF", "HUT01_UF", "HUT17_UF", "HUT10_UF"))
+  invisible(source("./diff_run.R"))
+  save.image(file = dataobj)
+}
+
+```
+
+# How different are cell type profile in samples?
+
+To estimate cell type profiles from bulk RNA-seq data, we use two commonplace methods:
+
+1. XCell enrichment scores.
+2. TODO: scProjection deconvolution based on single cell data. 
+
+## XCell estimations
+
+Despite looking like ratios limited 0..1, xCell emits two main metrics for cell type analysis - a p-value per prediction and the cell-type specific enrichment score.
+
+To gain an overview of the dataset, we use interactive heatmaps to show significant scores and their values. Also, we perform PCA to visualise the differences in cell type profiles.
+
+### HUT samples without filtering {.tabset}
+
+Here we simply ran xCell on the reannotated dataset.
+
+#### Original scores without filtering
+
+```{r warning = F, message = F, fig.height = 16}
+
+## read in the joined set dataobject
+xcell_obj <- readRDS("./data/xcell_results.rds")$`HUT`
+heatmap_annot <-
+  # use here the "unfiltered" phenotype, as xCell was performed on all samples
+  pheno_all %>%
+  rename(grouping = group) %>%
+  filter(samplename %in% colnames(xcell_obj$scores)) %>%
+  arrange(colnames(xcell_obj$scores)) %>%
+  column_to_rownames("samplename")
+
+
+## TODO: set colors manually
+htmap <-
+  xcell_obj$scores %>%
+    heatmaply(
+      # plot_method = "ggplot",
+      seriate = "OLO", # "mean", "OLO"
+      scale = "none",
+      dendrogram = "both",
+      col_side_colors = heatmap_annot,
+      # column_text_angle = 90,
+      # row_side_palette = c(dim_color_grouping, "Input" = "#777777"),
+      showticklabels = c(F, T)
+    )
+
+htmap
+
+```
+
+#### After filtering out cell types
+
+Another heatmap where celltypes with less than quarter of significant (p<0.1) enrichment scores overall are excluded. Enrichment scores are also capped to 1 to keep better coloring for the lower range.
+
+NB! "Smooth Muscle" was also removed as it does not provide much insight into different celltypes.
+
+```{r warning = F, message = F, fig.height = 12}
+
+xcell_enrich <-
+  xcell_obj$scores %>%
+  as_tibble(rownames = "celltype")
+
+xcell_p <-
+  xcell_obj$p_values %>%
+  as_tibble(rownames = "celltype")
+
+colnames(xcell_p) <- colnames(xcell_enrich)
+
+xcell_sig <-
+  xcell_p %>%
+  mutate(across(where(is.numeric), ~ .x < 0.1)) %>%
+  arrange(celltype)
+
+xcell_filt <-
+  xcell_enrich %>%
+  select(colnames(xcell_sig)) %>%
+  filter(celltype %in% xcell_sig$celltype) %>%
+  # remove some extra cell types that don't make sense rn
+  filter(!(celltype %in% c("Smooth muscle"))) %>%
+  arrange(celltype) %>%
+  column_to_rownames("celltype")
+
+```
+
+```{r warning = F, message = F, fig.height = 12}
+
+## alternatively just exclude those tissue types that have low sig count
+## without setting values to NA
+## which breaks the hierarchical clustering algoritm
+filt_sigs <-
+  xcell_sig %>%
+    rowwise() %>%
+    transmute(
+      celltype = celltype,
+      nasum = sum(c_across(where(is.logical))),
+    ) %>%
+    filter(nasum / length(heatmap_annot$grouping) > 0.25)
+
+htmap <-
+  xcell_filt %>%
+  as_tibble(rownames = "celltype") %>%
+  filter(celltype %in% filt_sigs$celltype) %>%
+  column_to_rownames("celltype") %>%
+  mutate(across(where(is.numeric), ~ ifelse(.x > 1, 1, .x))) %>%
+  heatmaply(
+    # plot_method = "ggplot",
+    seriate = "OLO", # "mean", "OLO"
+    scale = "none",
+    dendrogram = "both",
+    col_side_colors = heatmap_annot,
+    # column_text_angle = 90,
+    # hide_colorbar = T,
+    showticklabels = c(F, T)
+  )
+
+htmap
+
+```
+
+#### PCA of enrichment scores
+
+Apply PCA dimensionality reduction for the xCell output. Filled out circles stand for UF samples.
+
+```{r warning = F, message = F}
+
+xcell_pre <-
+  xcell_enrich %>%
+  pivot_longer(
+    where(is.numeric),
+    names_to = "samplename",
+    values_to = "xcell_enrich"
+    ) %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "celltype",
+    values_from = "xcell_enrich"
+    )
+
+expr_pca <-
+  xcell_pre %>%
+  recipe() %>%
+  update_role(samplename, new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = xcell_pre) %>%
+  left_join(heatmap_annot %>% as_tibble(rownames = "samplename"), by = "samplename")
+
+```
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca %>% filter(grouping == "UF"),
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ samplename,
+    color = ~ cyclephase,
+    marker = list(size = 6),
+    mode = "markers"
+  ) %>%
+  add_trace(
+    data = expr_pca %>% filter(grouping == "biopsy"),
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ samplename,
+    color = ~ cyclephase,
+    marker = list(size = 6, symbol = "circle-open"),
+    mode = "markers"
+  )
+
+```
+
+### Large joined dataset run {.tabset}
+
+For this option we will import data from the other previous studies:
+
+* (Current data)
+* Vigano EV (24),
+* ART EV (after filtering 42),
+* Endometrial and UF samples (20),
+* GSE9838 (40) samples,
+* cERtain brush biopsy samples (19),
+* Blood extracellular vesicle long RNA profiles of human plasma by deep sequencing ("exoeasy1", 117),
+* explored the plasma exoLRs profile of healthy individuals ("exoeasy2", 10).
+
+#### Original scores without filtering
+
+```{r warning = F, message = F, fig.height = 16}
+
+## read in the joined set dataobject
+xcell_obj <- readRDS("./data/xcell_results.rds")$`Joined set`
+xcell_pheno <- readRDS("./data/xcell_results_pheno.rds")
+
+heatmap_annot <-
+  xcell_pheno %>%
+    arrange(match(samplename, colnames(xcell_obj$scores))) %>%
+    column_to_rownames("samplename")
+
+num_col <- sum(
+  length(unique(heatmap_annot$grouping)),
+  length(unique(heatmap_annot$sampleset))
+  )
+ext_colors <-
+  colorRampPalette(RColorBrewer::brewer.pal(8, "Set2"))(num_col) %>%
+  setNames(c(unique(heatmap_annot$grouping), unique(heatmap_annot$sampleset)))
+
+## TODO: manual colors
+htmap <-
+  xcell_obj$scores %>%
+    heatmaply(
+      # plot_method = "ggplot",
+      seriate = "OLO", # "mean", "OLO"
+      scale = "none",
+      dendrogram = "both",
+      col_side_colors = heatmap_annot,
+      col_side_palette = ext_colors,
+      # column_text_angle = 90,
+      # row_side_palette = c(dim_color_grouping, "Input" = "#777777"),
+      showticklabels = c(F, T)
+    )
+
+htmap
+
+```
+
+#### After filtering out
+
+Another heatmap where celltypes with less than quarter of significant (p<0.1) enrichment scores overall are excluded. Enrichment scores are also capped to 1 to keep better coloring for the lower range.
+
+```{r warning = F, message = F, fig.height = 12}
+
+xcell_enrich <-
+  xcell_obj$scores %>%
+    as_tibble(rownames = "celltype")
+
+xcell_p <-
+  xcell_obj$p_values %>%
+  as_tibble(rownames = "celltype")
+
+colnames(xcell_p) <- colnames(xcell_enrich)
+
+xcell_sig <-
+  xcell_p %>%
+  mutate(across(where(is.numeric), ~ .x < 0.1)) %>%
+  arrange(celltype)
+
+xcell_filt <-
+  xcell_enrich %>%
+  select(colnames(xcell_sig)) %>%
+  filter(celltype %in% xcell_sig$celltype) %>%
+  arrange(celltype) %>%
+  column_to_rownames("celltype")
+
+```
+
+```{r warning = F, message = F, fig.height = 12}
+
+## alternatively just exclude those tissue types that have low sig count
+## without setting values to NA
+## which breaks the hierarchical clustering algoritm
+filt_sigs <-
+  xcell_sig %>%
+    rowwise() %>%
+    transmute(
+      celltype = celltype,
+      nasum = sum(c_across(where(is.logical))),
+    ) %>%
+    filter(nasum / length(xcell_pheno$sampleset) > 0.25)
+
+htmap <-
+  xcell_filt %>%
+  as_tibble(rownames = "celltype") %>%
+  filter(celltype %in% filt_sigs$celltype) %>%
+  column_to_rownames("celltype") %>%
+  mutate(across(where(is.numeric), ~ ifelse(.x > 1, 1, .x))) %>%
+  heatmaply(
+    # plot_method = "ggplot",
+    seriate = "OLO", # "mean", "OLO"
+    scale = "none",
+    dendrogram = "both",
+    col_side_colors = heatmap_annot,
+    col_side_palette = ext_colors,
+    # column_text_angle = 90,
+    # hide_colorbar = T,
+    showticklabels = c(F, T)
+  )
+  ## don't show legend
+  #layout(showlegend = F)
+
+htmap
+
+```
+
+#### Selecting only new samples
+
+The benefit of this plot compared to the "standalone run" one is that other related blood and endomerium sample help normalise the enrichment scores for the endometrial tissue.
+
+```{r warning = F, message = F, fig.height = 12}
+
+htmap <-
+  xcell_filt %>%
+  as_tibble(rownames = "celltype") %>%
+  filter(celltype %in% filt_sigs$celltype) %>%
+  # select current samples
+  select(c("celltype", filter(xcell_pheno, str_detect(sampleset, "Combined HUT"))$samplename)) %>%
+  column_to_rownames("celltype") %>%
+  mutate(across(where(is.numeric), ~ ifelse(.x > 1, 1, .x))) %>%
+  heatmaply(
+    # plot_method = "ggplot",
+    seriate = "OLO", # "mean", "OLO"
+    scale = "none",
+    dendrogram = "both",
+    col_side_colors = 
+      filter(xcell_pheno, str_detect(sampleset, "Combined HUT")) %>%
+      select(-sampleset) %>%
+      column_to_rownames("samplename"),
+    # col_side_palette = ext_colors,
+    # column_text_angle = 90,
+    # hide_colorbar = T,
+    showticklabels = c(F, T)
+  )
+  ## don't show legend
+  #layout(showlegend = F)
+
+htmap
+
+```
+
+#### Selecting only UF samples
+
+```{r warning = F, message = F, fig.height = 12}
+
+sel_samples <-
+  xcell_pheno %>%
+    filter(str_detect(grouping, "UF") & sampleset == "Combined HUT") %>%
+    select(-sampleset)
+
+htmap <-
+  xcell_filt %>%
+  as_tibble(rownames = "celltype") %>%
+  filter(celltype %in% filt_sigs$celltype) %>%
+  # select current samples
+  select( c("celltype", sel_samples$samplename) ) %>%
+  column_to_rownames("celltype") %>%
+  mutate(across(where(is.numeric), ~ ifelse(.x > 1, 1, .x))) %>%
+  heatmaply(
+    # plot_method = "ggplot",
+    seriate = "OLO", # "mean", "OLO"
+    scale = "none",
+    dendrogram = "both",
+    col_side_colors = sel_samples %>% column_to_rownames("samplename"),
+    # col_side_palette = ext_colors,
+    # column_text_angle = 90,
+    # hide_colorbar = T,
+    showticklabels = c(F, T)
+  )
+  ## don't show legend
+  #layout(showlegend = F)
+
+htmap
+
+```
+
+#### Selecting only biopsy samples
+
+```{r warning = F, message = F, fig.height = 12}
+
+sel_samples <-
+  xcell_pheno %>%
+    filter(str_detect(grouping, "biopsy") & sampleset == "Combined HUT") %>%
+    select(-sampleset)
+
+htmap <-
+  xcell_filt %>%
+  as_tibble(rownames = "celltype") %>%
+  filter(celltype %in% filt_sigs$celltype) %>%
+  # select current samples
+  select( c("celltype", sel_samples$samplename)) %>%
+  column_to_rownames("celltype") %>%
+  mutate(across(where(is.numeric), ~ ifelse(.x > 1, 1, .x))) %>%
+  heatmaply(
+    # plot_method = "ggplot",
+    seriate = "OLO", # "mean", "OLO"
+    scale = "none",
+    dendrogram = "both",
+    col_side_colors = sel_samples %>% column_to_rownames("samplename"),
+    # col_side_palette = ext_colors,
+    # column_text_angle = 90,
+    # hide_colorbar = T,
+    showticklabels = c(F, T)
+  )
+  ## don't show legend
+  #layout(showlegend = F)
+
+htmap
+
+```
+
+
+#### PCA of enrichment scores
+
+Apply PCA dimensionality reduction for the xCell output.
+
+```{r warning = F, message = F}
+
+xcell_pre <-
+  xcell_enrich %>%
+  pivot_longer(
+    where(is.numeric),
+    names_to = "samplename",
+    values_to = "xcell_enrich"
+    ) %>%
+  pivot_wider(
+    id_cols = "samplename",
+    names_from = "celltype",
+    values_from = "xcell_enrich"
+    )
+
+expr_pca <-
+  xcell_pre %>%
+  recipe() %>%
+  update_role(samplename, new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = xcell_pre) %>%
+  left_join(xcell_pheno, by = "samplename")
+
+```
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = expr_pca %>% filter(!str_detect(grouping, "biopsy")),
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ samplename,
+    color = ~ sampleset,
+    marker = list(size = 6),
+    mode = "markers"
+  ) %>%
+  add_trace(
+    data = expr_pca %>% filter(str_detect(grouping, "biopsy")),
+    x = ~ PC1,
+    y = ~ PC2,
+    z = ~ PC3,
+    type = "scatter3d",
+    text = ~ samplename,
+    color = ~ sampleset,
+    marker = list(size = 6, symbol = "circle-open"),
+    mode = "markers"
+  )
+
+```
+
+#### And UMAP
+
+Empty circles represent biopsy samples, whereas filled out circles are UF samples.
+
+```{r warning = F, message = F}
+
+expr_umap <-
+  xcell_pre %>%
+  recipe() %>%
+  update_role(samplename, new_role = "id") %>%
+  step_zv(all_numeric()) %>%
+  step_normalize(all_numeric()) %>%
+  step_umap(all_numeric(), num_comp = 3) %>%
+  prep(strings_as_factors = F) %>%
+  bake(new_data = xcell_pre) %>%
+  left_join(xcell_pheno, by = "samplename")
+
+```
+
+```{r warning = F, message = F}
+
+plot_ly() %>%
+  add_trace(
+    data = expr_umap %>% filter(!str_detect(grouping, "biopsy")),
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ samplename,
+    color = ~ sampleset,
+    marker = list(size = 6),
+    mode = "markers"
+  ) %>%
+  add_trace(
+    data = expr_umap %>% filter(str_detect(grouping, "biopsy")),
+    x = ~ UMAP1,
+    y = ~ UMAP2,
+    z = ~ UMAP3,
+    type = "scatter3d",
+    text = ~ samplename,
+    color = ~ sampleset,
+    marker = list(size = 6, symbol = "circle-open"),
+    mode = "markers"
+  )
+
+```
+
+### TODO: Static xCell heatmaps
+
+```{r warning = F, message = F}
+
+```
+
+
+## TODO: scProjection
+
+Here we apply the [scProjection](https://www.nature.com/articles/s41467-023-40744-6) model for the deconvolution. For the applidation, we need to use the combined HUTER/ER-atlas dataset for reference scRNA-seq data on cell types.
+
+
+# Session info
+
+```{r warning = F, message = F}
+sessionInfo()
+```
