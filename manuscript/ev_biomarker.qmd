@@ -1,0 +1,122 @@
+---
+title: "EV-biomarker"
+date: "Compiled on `r format(Sys.time(), '%d/%m/%y')`"
+format:
+  html:
+    code-fold: true
+    code-tools: true
+jupyter: python3
+---
+
+# Prelude: Setup environment
+
+## Load data and environment
+
+Setup the environment and load dependencies, defined in external `back.R` script:
+
+1. Load the dependencies, set up multithreading.
+2. Set color groups and values.
+3. Define convenience functions for preprocessing and visualisation.
+4. Load and transform phenotype data and the data matrix.
+5. Query BioMart for gene annotation and alternative names.
+6. Load also important gene lists.
+
+```{r warning = F, message = F}
+## !RUNTHIS
+
+## load the project dependencies
+source("./scripts/load_deps.R")
+
+## load the model metrics functions
+source("./scripts/metrics_functions.R")
+
+## check if theres a R data object already, othewise run the data muncher
+# and save the preprocessed data into the RData
+data_subfolder <- "./data/orig/"
+dataobj <- paste0(data_subfolder, "ev_data.RData")
+if (file.exists(dataobj)) {
+  load(dataobj)
+} else {
+  ## load in the backend data muncher
+  commandArgs <- function(...)
+    list(data_subfolder = data_subfolder)
+  dir.create(data_subfolder, showWarnings = F)
+  invisible(source("./scripts/de_runner.R"))
+  save.image(file = dataobj)
+}
+
+```
+
+# Methods
+
+## Processing pipeline
+
+* do we use all the DE toolsets? maybe use DESeq2 and voom at the same time?
+
+Raw sequencing reads were preprocessed with the "rnaseq" pipeline (v3.12.0) from nf-core [[Ewels et al](10.5281/zenodo.1400710)]. The pipeline was configured to map reads to the GRCh37 genome using the STAR tool and after mapping, quantified with RSEM algorithm [[RSEM](10.1186/1471-2105-12-323) [STAR](10.1093/bioinformatics/bts635)]. Downstream analysis was done in R and Python programming languages. For differential analysis, we used both DESeq2, (edgeR and) limma-voom algorithms to measure the differences between gene expression levels in different sample groups and to perform statistical testing on the gene-wise differences [[DESeq2](), [limma-voom]()]. For deconvolution analysis we used the [TAPE](https://www.nature.com/articles/s41467-022-34550-9) algorithm and trained the model using the (HECA)[https://doi.org/10.1101/2023.11.03.564728] endometrial cell atlas.
+
+```{bash filename="Command for running nf-core/rnaseq"}
+
+## nf-core/rnaseq v3.12 (https://nf-co.re/rnseq/3.12.0)
+nextflow run nf-core/rnaseq \
+  -r 3.12.0 \
+  --input samplesheet_mrna.csv \
+  --genome GRCh37 \
+  --aligner star_rsem \
+  --outdir "./results_mrna/" \
+  -c nextflow.config \
+  -profile singularity
+
+```
+
+## Model development
+
+This section covers the arduous process of finetuning the beREADY algorithm for EV samples. For this we have to first check, if the existing biomarkers are still differing in a statistically relevant way. If not, we will find new biomarkers using differential gene analysis between different EV receptivity groups. Then, mimicking the original TAC-seq protocol for receptivity testing, we would need to find housekeeper genes to use as a reference for normalising the samples. After determining all the parameters, we will finetune the beREADY model based on the variance of the reference receptivity groups to predict accurately the receptivity of those samples.
+
+### Finding non-invasive biomarkers
+
+Due to the nature of EV extracted from the uterine fluid, we need to investigate whether the existing commonly used biomarkers are useful for separating different receptivity groups based on the transcriptomic profile. To explore this, we 
+
+* **test** the difference of those biomarker genes in EV and biopsy samples throughout the menstrual cycle;
+* **visualise** the similiarity of those groups in dimensionality reduced space of PCA and UMAP analysis;
+* **perform differential analysis** between different menstrual cycle phases of EV samples and query for genes overlapping with previous biomarker sets.
+
+For reference, we are using 3 previously proposed reference biomarker sets, the set of biomarkers found by Altmäe et al. (beREADY); the set of markers for the ERA test (ERA) [Diaz-Gimeno? et al.]; and finally, a set of genes found in a metaanalysis of previous receptivity studies (TED) [again Diaz-Gimeno?].
+
+```{r warning = F, message = F}
+
+
+
+```
+
+### Determining suitable housekeeper genes
+
+### Finetuning the beREADY model
+
+### Benchmarking different models for receptivity assessment
+
+* Show results from random forest and elasticnet regression analysis
+
+## Set of samples
+
+For model development, we are working originally with a set of 26 samples over proliferative and 3 different secretory phases - early-secretory or pre-receptive, mid-secretory or receptive and late-secretory or post-receptive. All 26 samples were collected both as uterine fluid (UF) and biopsy samples. To account for library-specific effects, we sequenced one biopsy sample (HUT71) in three technical replicates per each library. The samples represented the cycle phases well, having nearly equal distribution between classes (early ..., recept...). 
+
+
+**Overview of the samples used**
+```{r warning = F, message = F}
+
+barplotter <- function(phenotype_obj, title_text = "Training samples")
+  phenotype_obj %>%
+    ggplot(aes(cyclephase, fill = group)) +
+    geom_bar() +
+    theme_thesis() +
+    xlab("Phases") +
+    ylab("Number of samples") +
+    ggtitle(title_text) +
+    theme(plot.title = element_text()) +
+    scale_fill_manual(values = status_grouping)
+
+pheno %>% barplotter | pheno_test %>% barplotter(title = "Testing samples")
+
+```
+

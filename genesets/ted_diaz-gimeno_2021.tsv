@@ -1,0 +1,311 @@
+Gene Name	Gene Description	Source	TED
+ABCC3	"ATP binding cassette subfamily C member 3 [Source:HGNC Symbol;Acc:HGNC:54]"	"Diaz-Gimeno et al., 2011 Top50"	1
+ABLIM3	"actin binding LIM protein family member 3 [Source:HGNC Symbol;Acc:HGNC:29132]"	Diaz-Gimeno et al., 2011	0
+ACADSB	"acyl-CoA dehydrogenase short/branched chain [Source:HGNC Symbol;Acc:HGNC:91]"	"Diaz-Gimeno et al., 2011 Top50"	0
+ACTA2	"actin alpha 2, smooth muscle [Source:HGNC Symbol;Acc:HGNC:130]"	Diaz-Gimeno et al., 2011	0
+ACTB	"actin beta [Source:HGNC Symbol;Acc:HGNC:132]"	HouseKeeping	0
+ACTG1	"actin gamma 1 [Source:HGNC Symbol;Acc:HGNC:144]"	HouseKeeping	0
+ADAMTS1	"ADAM metallopeptidase with thrombospondin type 1 motif 1 [Source:HGNC Symbol;Acc:HGNC:217]"	Diaz-Gimeno et al., 2011	0
+ADAMTS8	"ADAM metallopeptidase with thrombospondin type 1 motif 8 [Source:HGNC Symbol;Acc:HGNC:224]"	Diaz-Gimeno et al., 2011	0
+ADGRG2	"adhesion G protein-coupled receptor G2 [Source:HGNC Symbol;Acc:HGNC:4516]"	Diaz-Gimeno et al., 2011	0
+ADRA2A	"adrenoceptor alpha 2A [Source:HGNC Symbol;Acc:HGNC:281]"	Diaz-Gimeno et al., 2011	0
+ADSS2	"adenylosuccinate synthase 2 [Source:HGNC Symbol;Acc:HGNC:292]"	Top50	0
+AGR2	"anterior gradient 2, protein disulphide isomerase family member [Source:HGNC Symbol;Acc:HGNC:328]"	Diaz-Gimeno et al., 2011	0
+AIMP1	"aminoacyl tRNA synthetase complex interacting multifunctional protein 1 [Source:HGNC Symbol;Acc:HGNC:10648]"	Diaz-Gimeno et al., 2011	0
+ALDH1A3	"aldehyde dehydrogenase 1 family member A3 [Source:HGNC Symbol;Acc:HGNC:409]"	Enciso et al., 2013	0
+ALPL	"alkaline phosphatase, biomineralization associated [Source:HGNC Symbol;Acc:HGNC:438]"	"Diaz-Gimeno et al., 2011 Top50"	1
+AMIGO2	"adhesion molecule with Ig like domain 2 [Source:HGNC Symbol;Acc:HGNC:24073]"	Diaz-Gimeno et al., 2011	0
+ANGPTL1	"angiopoietin like 1 [Source:HGNC Symbol;Acc:HGNC:489]"	"Enciso et al., 2013 Hamamah, 2013"	0
+ANK3	"ankyrin 3 [Source:HGNC Symbol;Acc:HGNC:494]"	Diaz-Gimeno et al., 2011	0
+ANO1	"anoctamin 1 [Source:HGNC Symbol;Acc:HGNC:21625]"	Diaz-Gimeno et al., 2011	0
+ANXA4	"annexin A4 [Source:HGNC Symbol;Acc:HGNC:542]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013 Top50"	0
+AOX1	"aldehyde oxidase 1 [Source:HGNC Symbol;Acc:HGNC:553]"	Diaz-Gimeno et al., 2011	0
+APOD	"apolipoprotein D [Source:HGNC Symbol;Acc:HGNC:612]"	Enciso et al., 2013	0
+APOL2	"apolipoprotein L2 [Source:HGNC Symbol;Acc:HGNC:619]"	Enciso et al., 2013	0
+AQP3	"aquaporin 3 (Gill blood group) [Source:HGNC Symbol;Acc:HGNC:636]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013"	0
+ARG2	"arginase 2 [Source:HGNC Symbol;Acc:HGNC:664]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013"	1
+ARHGAP45	"Rho GTPase activating protein 45 [Source:HGNC Symbol;Acc:HGNC:17102]"	Diaz-Gimeno et al., 2011	0
+ARHGDIA	"Rho GDP dissociation inhibitor alpha [Source:HGNC Symbol;Acc:HGNC:678]"	Enciso et al., 2013	0
+ARHGDIB	"Rho GDP dissociation inhibitor beta [Source:HGNC Symbol;Acc:HGNC:679]"	Diaz-Gimeno et al., 2011	0
+ARID5B	"AT-rich interaction domain 5B [Source:HGNC Symbol;Acc:HGNC:17362]"	"Diaz-Gimeno et al., 2011 Top50"	1
+ASPM	"assembly factor for spindle microtubules [Source:HGNC Symbol;Acc:HGNC:19048]"	Diaz-Gimeno et al., 2011	0
+ASS1	"argininosuccinate synthase 1 [Source:HGNC Symbol;Acc:HGNC:758]"	Diaz-Gimeno et al., 2011	0
+ATP1B1	"ATPase Na+/K+ transporting subunit beta 1 [Source:HGNC Symbol;Acc:HGNC:804]"	Diaz-Gimeno et al., 2011	0
+ATP6V0E2	"ATPase H+ transporting V0 subunit e2 [Source:HGNC Symbol;Acc:HGNC:21723]"	Diaz-Gimeno et al., 2011	1
+ATP6V1A	"ATPase H+ transporting V1 subunit A [Source:HGNC Symbol;Acc:HGNC:851]"	Diaz-Gimeno et al., 2011	0
+BARD1	"BRCA1 associated RING domain 1 [Source:HGNC Symbol;Acc:HGNC:952]"	Diaz-Gimeno et al., 2011	0
+BCL2L10	"BCL2 like 10 [Source:HGNC Symbol;Acc:HGNC:993]"	Hamamah, 2013	0
+BCL6	"BCL6 transcription repressor [Source:HGNC Symbol;Acc:HGNC:1001]"	Diaz-Gimeno et al., 2011	0
+BIRC3	"baculoviral IAP repeat containing 3 [Source:HGNC Symbol;Acc:HGNC:591]"	Diaz-Gimeno et al., 2011	1
+BUB1B	"BUB1 mitotic checkpoint serine/threonine kinase B [Source:HGNC Symbol;Acc:HGNC:1149]"	Diaz-Gimeno et al., 2011	0
+C16orf70	"chromosome 16 open reading frame 70 [Source:HGNC Symbol;Acc:HGNC:29564]"	Top50	0
+C1R	"complement C1r [Source:HGNC Symbol;Acc:HGNC:1246]"	Top50	0
+C2CD4B	"C2 calcium dependent domain containing 4B [Source:HGNC Symbol;Acc:HGNC:33628]"	"Enciso et al., 2013 Hamamah, 2013"	1
+C3	"complement C3 [Source:HGNC Symbol;Acc:HGNC:1318]"	Diaz-Gimeno et al., 2011	0
+C4BPA	"complement component 4 binding protein alpha [Source:HGNC Symbol;Acc:HGNC:1325]"	Diaz-Gimeno et al., 2011	1
+CALB2	"calbindin 2 [Source:HGNC Symbol;Acc:HGNC:1435]"	Diaz-Gimeno et al., 2011	1
+CALCA	"calcitonin related polypeptide alpha [Source:HGNC Symbol;Acc:HGNC:1437]"	Enciso et al., 2013	0
+CAPN6	"calpain 6 [Source:HGNC Symbol;Acc:HGNC:1483]"	Diaz-Gimeno et al., 2011	0
+CAPRIN1	"cell cycle associated protein 1 [Source:HGNC Symbol;Acc:HGNC:6743]"	Top50	0
+CATSPERB	"cation channel sperm associated auxiliary subunit beta [Source:HGNC Symbol;Acc:HGNC:20500]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013 Top50"	0
+CBR3	"carbonyl reductase 3 [Source:HGNC Symbol;Acc:HGNC:1549]"	Diaz-Gimeno et al., 2011	1
+CCNB2	"cyclin B2 [Source:HGNC Symbol;Acc:HGNC:1580]"	Diaz-Gimeno et al., 2011	0
+CD55	"CD55 molecule (Cromer blood group) [Source:HGNC Symbol;Acc:HGNC:2665]"	Top50	1
+CD68	"CD68 molecule [Source:HGNC Symbol;Acc:HGNC:1693]"	Hamamah, 2013	0
+CD7	"CD7 molecule [Source:HGNC Symbol;Acc:HGNC:1695]"	Diaz-Gimeno et al., 2011	0
+CDA	"cytidine deaminase [Source:HGNC Symbol;Acc:HGNC:1712]"	Diaz-Gimeno et al., 2011	0
+CDC20	"cell division cycle 20 [Source:HGNC Symbol;Acc:HGNC:1723]"	Diaz-Gimeno et al., 2011	1
+CDK1	"cyclin dependent kinase 1 [Source:HGNC Symbol;Acc:HGNC:1722]"	Diaz-Gimeno et al., 2011	0
+CENPE	"centromere protein E [Source:HGNC Symbol;Acc:HGNC:1856]"	Diaz-Gimeno et al., 2011	0
+CEP55	"centrosomal protein 55 [Source:HGNC Symbol;Acc:HGNC:1161]"	Diaz-Gimeno et al., 2011	0
+CES1	"carboxylesterase 1 [Source:HGNC Symbol;Acc:HGNC:1863]"	Diaz-Gimeno et al., 2011	0
+CFD	"complement factor D [Source:HGNC Symbol;Acc:HGNC:2771]"	Diaz-Gimeno et al., 2011	0
+CKB	"creatine kinase B [Source:HGNC Symbol;Acc:HGNC:1991]"	Diaz-Gimeno et al., 2011	1
+CLDN10	"claudin 10 [Source:HGNC Symbol;Acc:HGNC:2033]"	Diaz-Gimeno et al., 2011	0
+CLDN4	"claudin 4 [Source:HGNC Symbol;Acc:HGNC:2046]"	Diaz-Gimeno et al., 2011	0
+CLU	"clusterin [Source:HGNC Symbol;Acc:HGNC:2095]"	Diaz-Gimeno et al., 2011	0
+COBL	"cordon-bleu WH2 repeat protein [Source:HGNC Symbol;Acc:HGNC:22199]"	Diaz-Gimeno et al., 2011	0
+COL16A1	"collagen type XVI alpha 1 chain [Source:HGNC Symbol;Acc:HGNC:2193]"	Diaz-Gimeno et al., 2011	0
+COMP	"cartilage oligomeric matrix protein [Source:HGNC Symbol;Acc:HGNC:2227]"	Diaz-Gimeno et al., 2011	0
+CORO1A	"coronin 1A [Source:HGNC Symbol;Acc:HGNC:2252]"	Diaz-Gimeno et al., 2011	0
+COTL1	"coactosin like F-actin binding protein 1 [Source:HGNC Symbol;Acc:HGNC:18304]"	"Diaz-Gimeno et al., 2011 Top50"	0
+CP	"ceruloplasmin [Source:HGNC Symbol;Acc:HGNC:2295]"	Diaz-Gimeno et al., 2011	1
+CRABP2	"cellular retinoic acid binding protein 2 [Source:HGNC Symbol;Acc:HGNC:2339]"	Diaz-Gimeno et al., 2011	0
+CREB3L1	"cAMP responsive element binding protein 3 like 1 [Source:HGNC Symbol;Acc:HGNC:18856]"	Diaz-Gimeno et al., 2011	1
+CRISP3	"cysteine rich secretory protein 3 [Source:HGNC Symbol;Acc:HGNC:16904]"	Diaz-Gimeno et al., 2011	0
+CSRP2	"cysteine and glycine rich protein 2 [Source:HGNC Symbol;Acc:HGNC:2470]"	"Diaz-Gimeno et al., 2011 Top50"	1
+CTNNA2	"catenin alpha 2 [Source:HGNC Symbol;Acc:HGNC:2510]"	Diaz-Gimeno et al., 2011	0
+CTNND2	"catenin delta 2 [Source:HGNC Symbol;Acc:HGNC:2516]"	Top50	0
+CTSW	"cathepsin W [Source:HGNC Symbol;Acc:HGNC:2546]"	Diaz-Gimeno et al., 2011	0
+CXCL1	"C-X-C motif chemokine ligand 1 [Source:HGNC Symbol;Acc:HGNC:4602]"	Enciso et al., 2013	0
+CXCL13	"C-X-C motif chemokine ligand 13 [Source:HGNC Symbol;Acc:HGNC:10639]"	Diaz-Gimeno et al., 2011	0
+CXCL14	"C-X-C motif chemokine ligand 14 [Source:HGNC Symbol;Acc:HGNC:10640]"	Diaz-Gimeno et al., 2011	0
+CYBRD1	"cytochrome b reductase 1 [Source:HGNC Symbol;Acc:HGNC:20797]"	Diaz-Gimeno et al., 2011	0
+CYP2J2	"cytochrome P450 family 2 subfamily J member 2 [Source:HGNC Symbol;Acc:HGNC:2634]"	Diaz-Gimeno et al., 2011	1
+CYP3A5	"cytochrome P450 family 3 subfamily A member 5 [Source:HGNC Symbol;Acc:HGNC:2638]"	Diaz-Gimeno et al., 2011	1
+DDX52	"DExD-box helicase 52 [Source:HGNC Symbol;Acc:HGNC:20038]"	Diaz-Gimeno et al., 2011	0
+DEFB1	"defensin beta 1 [Source:HGNC Symbol;Acc:HGNC:2766]"	Diaz-Gimeno et al., 2011	1
+DEPP1	"DEPP1 autophagy regulator [Source:HGNC Symbol;Acc:HGNC:23355]"	Diaz-Gimeno et al., 2011	1
+DEPTOR	"DEP domain containing MTOR interacting protein [Source:HGNC Symbol;Acc:HGNC:22953]"	Diaz-Gimeno et al., 2011	0
+DHRS3	"dehydrogenase/reductase 3 [Source:HGNC Symbol;Acc:HGNC:17693]"	Diaz-Gimeno et al., 2011	0
+DKK1	"dickkopf WNT signaling pathway inhibitor 1 [Source:HGNC Symbol;Acc:HGNC:2891]"	Diaz-Gimeno et al., 2011	0
+DLGAP5	"DLG associated protein 5 [Source:HGNC Symbol;Acc:HGNC:16864]"	Diaz-Gimeno et al., 2011	0
+DPP4	"dipeptidyl peptidase 4 [Source:HGNC Symbol;Acc:HGNC:3009]"	Diaz-Gimeno et al., 2011	0
+DUOX1	"dual oxidase 1 [Source:HGNC Symbol;Acc:HGNC:3062]"	Diaz-Gimeno et al., 2011	0
+DYNLT3	"dynein light chain Tctex-type 3 [Source:HGNC Symbol;Acc:HGNC:11694]"	Top50	0
+EAF2	"ELL associated factor 2 [Source:HGNC Symbol;Acc:HGNC:23115]"	Top50	0
+ECI2	"enoyl-CoA delta isomerase 2 [Source:HGNC Symbol;Acc:HGNC:14601]"	Diaz-Gimeno et al., 2011	1
+ECM1	"extracellular matrix protein 1 [Source:HGNC Symbol;Acc:HGNC:3153]"	Diaz-Gimeno et al., 2011	1
+EDN3	"endothelin 3 [Source:HGNC Symbol;Acc:HGNC:3178]"	Diaz-Gimeno et al., 2011	1
+EDNRB	"endothelin receptor type B [Source:HGNC Symbol;Acc:HGNC:3180]"	Diaz-Gimeno et al., 2011	0
+EFEMP1	"EGF containing fibulin extracellular matrix protein 1 [Source:HGNC Symbol;Acc:HGNC:3218]"	Diaz-Gimeno et al., 2011	0
+EFNA1	"ephrin A1 [Source:HGNC Symbol;Acc:HGNC:3221]"	Diaz-Gimeno et al., 2011	1
+EIF4E3	"eukaryotic translation initiation factor 4E family member 3 [Source:HGNC Symbol;Acc:HGNC:31837]"	Top50	0
+EMCN	"endomucin [Source:HGNC Symbol;Acc:HGNC:16041]"	Diaz-Gimeno et al., 2011	0
+ENOX2	"ecto-NOX disulfide-thiol exchanger 2 [Source:HGNC Symbol;Acc:HGNC:2259]"	HouseKeeping	0
+ENPEP	"glutamyl aminopeptidase [Source:HGNC Symbol;Acc:HGNC:3355]"	Diaz-Gimeno et al., 2011	0
+ENY2	"ENY2 transcription and export complex 2 subunit [Source:HGNC Symbol;Acc:HGNC:24449]"	Top50	1
+EPHB3	"EPH receptor B3 [Source:HGNC Symbol;Acc:HGNC:3394]"	Diaz-Gimeno et al., 2011	1
+EVC	"EvC ciliary complex subunit 1 [Source:HGNC Symbol;Acc:HGNC:3497]"	Diaz-Gimeno et al., 2011	0
+F11R	"F11 receptor [Source:HGNC Symbol;Acc:HGNC:14685]"	Top50	0
+FAM169A	"family with sequence similarity 169 member A [Source:HGNC Symbol;Acc:HGNC:29138]"	Diaz-Gimeno et al., 2011	0
+FANCI	"FA complementation group I [Source:HGNC Symbol;Acc:HGNC:25568]"	Diaz-Gimeno et al., 2011	0
+FGB	"fibrinogen beta chain [Source:HGNC Symbol;Acc:HGNC:3662]"	Diaz-Gimeno et al., 2011	0
+FHDC1	"FH2 domain containing 1 [Source:HGNC Symbol;Acc:HGNC:29363]"	Top50	0
+FOSL2	"FOS like 2, AP-1 transcription factor subunit [Source:HGNC Symbol;Acc:HGNC:3798]"	Diaz-Gimeno et al., 2011, Top50	0
+FOXO1	"forkhead box O1 [Source:HGNC Symbol;Acc:HGNC:3819]"	Enciso et al., 2013	0
+FST	"follistatin [Source:HGNC Symbol;Acc:HGNC:3971]"	Hamamah, 2013	0
+FXYD2	"FXYD domain containing ion transport regulator 2 [Source:HGNC Symbol;Acc:HGNC:4026]"	Diaz-Gimeno et al., 2011	0
+FXYD3	"FXYD domain containing ion transport regulator 3 [Source:HGNC Symbol;Acc:HGNC:4027]"	Top50	0
+G0S2	"G0/G1 switch 2 [Source:HGNC Symbol;Acc:HGNC:30229]"	Diaz-Gimeno et al., 2011	0
+GABARAPL1	"GABA type A receptor associated protein like 1 [Source:HGNC Symbol;Acc:HGNC:4068]"	Diaz-Gimeno et al., 2011	1
+GADD45A	"growth arrest and DNA damage inducible alpha [Source:HGNC Symbol;Acc:HGNC:4095]"	Diaz-Gimeno et al., 2011	0
+GALNT12	"polypeptide N-acetylgalactosaminyltransferase 12 [Source:HGNC Symbol;Acc:HGNC:19877]"	Diaz-Gimeno et al., 2011	1
+GAPDH	"glyceraldehyde-3-phosphate dehydrogenase [Source:HGNC Symbol;Acc:HGNC:4141]"	HouseKeeping	0
+GAREM1	"GRB2 associated regulator of MAPK1 subtype 1 [Source:HGNC Symbol;Acc:HGNC:26136]"	Diaz-Gimeno et al., 2011	1
+GAS1	"growth arrest specific 1 [Source:HGNC Symbol;Acc:HGNC:4165]"	Diaz-Gimeno et al., 2011	0
+GAST	"gastrin [Source:HGNC Symbol;Acc:HGNC:4164]"	Diaz-Gimeno et al., 2011	0
+GBP2	"guanylate binding protein 2 [Source:HGNC Symbol;Acc:HGNC:4183]"	Diaz-Gimeno et al., 2011	0
+GDF15	"growth differentiation factor 15 [Source:HGNC Symbol;Acc:HGNC:30142]"	Diaz-Gimeno et al., 2011	0
+GJA4	"gap junction protein alpha 4 [Source:HGNC Symbol;Acc:HGNC:4278]"	Enciso et al., 2013	0
+GLIPR1	"GLI pathogenesis related 1 [Source:HGNC Symbol;Acc:HGNC:17001]"	Diaz-Gimeno et al., 2011	0
+GNLY	"granulysin [Source:HGNC Symbol;Acc:HGNC:4414]"	Diaz-Gimeno et al., 2011	0
+GPRC5C	"G protein-coupled receptor class C group 5 member C [Source:HGNC Symbol;Acc:HGNC:13309]"	Diaz-Gimeno et al., 2011	0
+GPX3	"glutathione peroxidase 3 [Source:HGNC Symbol;Acc:HGNC:4555]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013"	1
+GRAMD1C	"GRAM domain containing 1C [Source:HGNC Symbol;Acc:HGNC:25252]"	Top50	0
+GREM2	"gremlin 2, DAN family BMP antagonist [Source:HGNC Symbol;Acc:HGNC:17655]"	Diaz-Gimeno et al., 2011	1
+GZMA	"granzyme A [Source:HGNC Symbol;Acc:HGNC:4708]"	Diaz-Gimeno et al., 2011	0
+HABP2	"hyaluronan binding protein 2 [Source:HGNC Symbol;Acc:HGNC:4798]"	Diaz-Gimeno et al., 2011	1
+HAL	"histidine ammonia-lyase [Source:HGNC Symbol;Acc:HGNC:4806]"	Diaz-Gimeno et al., 2011	1
+HAND2	"heart and neural crest derivatives expressed 2 [Source:HGNC Symbol;Acc:HGNC:4808]"	Diaz-Gimeno et al., 2011	0
+HEY1	"hes related family bHLH transcription factor with YRPW motif 1 [Source:HGNC Symbol;Acc:HGNC:4880]"	Diaz-Gimeno et al., 2011	0
+HEY2	"hes related family bHLH transcription factor with YRPW motif 2 [Source:HGNC Symbol;Acc:HGNC:4881]"	Diaz-Gimeno et al., 2011	0
+HLA-DOB	"major histocompatibility complex, class II, DO beta [Source:HGNC Symbol;Acc:HGNC:4937]"	Diaz-Gimeno et al., 2011	0
+HMGN3	"high mobility group nucleosomal binding domain 3 [Source:HGNC Symbol;Acc:HGNC:12312]"	Top50	0
+HPGD	"15-hydroxyprostaglandin dehydrogenase [Source:HGNC Symbol;Acc:HGNC:5154]"	Diaz-Gimeno et al., 2011	0
+HPRT1	"hypoxanthine phosphoribosyltransferase 1 [Source:HGNC Symbol;Acc:HGNC:5157]"	Enciso et al., 2013	1
+HPSE	"heparanase [Source:HGNC Symbol;Acc:HGNC:5164]"	Diaz-Gimeno et al., 2011	1
+HSD11B2	"hydroxysteroid 11-beta dehydrogenase 2 [Source:HGNC Symbol;Acc:HGNC:5209]"	Diaz-Gimeno et al., 2011	0
+ID4	"inhibitor of DNA binding 4, HLH protein [Source:HGNC Symbol;Acc:HGNC:5363]"	"Diaz-Gimeno et al., 2011 Top50"	1
+IDH1	"isocitrate dehydrogenase (NADP(+)) 1 [Source:HGNC Symbol;Acc:HGNC:5382]"	Diaz-Gimeno et al., 2011	1
+IDO1	"indoleamine 2,3-dioxygenase 1 [Source:HGNC Symbol;Acc:HGNC:6059]"	Diaz-Gimeno et al., 2011	0
+IER3	"immediate early response 3 [Source:HGNC Symbol;Acc:HGNC:5392]"	Diaz-Gimeno et al., 2011	1
+IFNG	"interferon gamma [Source:HGNC Symbol;Acc:HGNC:5438]"	Enciso et al., 2013	0
+IGF2	"insulin like growth factor 2 [Source:HGNC Symbol;Acc:HGNC:5466]"	Diaz-Gimeno et al., 2011	0
+IGFBP1	"insulin like growth factor binding protein 1 [Source:HGNC Symbol;Acc:HGNC:5469]"	Diaz-Gimeno et al., 2011	0
+IL15	"interleukin 15 [Source:HGNC Symbol;Acc:HGNC:5977]"	Diaz-Gimeno et al., 2011	0
+IL2RB	"interleukin 2 receptor subunit beta [Source:HGNC Symbol;Acc:HGNC:6009]"	Diaz-Gimeno et al., 2011	0
+IMPA2	"inositol monophosphatase 2 [Source:HGNC Symbol;Acc:HGNC:6051]"	"Diaz-Gimeno et al., 2011 Top50"	0
+ITGA8	"integrin subunit alpha 8 [Source:HGNC Symbol;Acc:HGNC:6144]"	Enciso et al., 2013	0
+ITGA9	"integrin subunit alpha 9 [Source:HGNC Symbol;Acc:HGNC:6145]"	Enciso et al., 2013	0
+KCND3	"potassium voltage-gated channel subfamily D member 3 [Source:HGNC Symbol;Acc:HGNC:6239]"	Top50	0
+KCNG1	"potassium voltage-gated channel modifier subfamily G member 1 [Source:HGNC Symbol;Acc:HGNC:6248]"	"Diaz-Gimeno et al., 2011 Top50"	1
+KCNJ2	"potassium inwardly rectifying channel subfamily J member 2 [Source:HGNC Symbol;Acc:HGNC:6263]"	Diaz-Gimeno et al., 2011	0
+KCNK7	"potassium two pore domain channel subfamily K member 7 [Source:HGNC Symbol;Acc:HGNC:6282]"	Diaz-Gimeno et al., 2011	0
+KHDRBS3	"KH RNA binding domain containing, signal transduction associated 3 [Source:HGNC Symbol;Acc:HGNC:18117]"	Diaz-Gimeno et al., 2011	0
+KIF11	"kinesin family member 11 [Source:HGNC Symbol;Acc:HGNC:6388]"	Diaz-Gimeno et al., 2011	0
+KIF1B	"kinesin family member 1B [Source:HGNC Symbol;Acc:HGNC:16636]"	Top50	0
+KIF20A	"kinesin family member 20A [Source:HGNC Symbol;Acc:HGNC:9787]"	Diaz-Gimeno et al., 2011	0
+KIF4A	"kinesin family member 4A [Source:HGNC Symbol;Acc:HGNC:13339]"	Diaz-Gimeno et al., 2011	0
+KLRC1	"killer cell lectin like receptor C1 [Source:HGNC Symbol;Acc:HGNC:6374]"	Diaz-Gimeno et al., 2011	0
+KMO	"kynurenine 3-monooxygenase [Source:HGNC Symbol;Acc:HGNC:6381]"	Diaz-Gimeno et al., 2011	1
+KRT7	"keratin 7 [Source:HGNC Symbol;Acc:HGNC:6445]"	Diaz-Gimeno et al., 2011	0
+KRT80	"keratin 80 [Source:HGNC Symbol;Acc:HGNC:27056]"	Hamamah, 2013	0
+LAMB3	"laminin subunit beta 3 [Source:HGNC Symbol;Acc:HGNC:6490]"	"Diaz-Gimeno et al., 2011 Hamamah, 2013"	0
+LIF	"LIF interleukin 6 family cytokine [Source:HGNC Symbol;Acc:HGNC:6596]"	Diaz-Gimeno et al., 2011	0
+LIMK2	"LIM domain kinase 2 [Source:HGNC Symbol;Acc:HGNC:6614]"	Top50	0
+LMCD1	"LIM and cysteine rich domains 1 [Source:HGNC Symbol;Acc:HGNC:6633]"	Diaz-Gimeno et al., 2011	0
+LMOD1	"leiomodin 1 [Source:HGNC Symbol;Acc:HGNC:6647]"	Diaz-Gimeno et al., 2011	0
+LRFN4	"leucine rich repeat and fibronectin type III domain containing 4 [Source:HGNC Symbol;Acc:HGNC:28456]"	Diaz-Gimeno et al., 2011	0
+LRP4	"LDL receptor related protein 4 [Source:HGNC Symbol;Acc:HGNC:6696]"	Diaz-Gimeno et al., 2011	1
+LRRC1	"leucine rich repeat containing 1 [Source:HGNC Symbol;Acc:HGNC:14307]"	Diaz-Gimeno et al., 2011	0
+LRRC17	"leucine rich repeat containing 17 [Source:HGNC Symbol;Acc:HGNC:16895]"	Diaz-Gimeno et al., 2011	0
+LYPD3	"LY6/PLAUR domain containing 3 [Source:HGNC Symbol;Acc:HGNC:24880]"	Diaz-Gimeno et al., 2011	0
+MAOA	"monoamine oxidase A [Source:HGNC Symbol;Acc:HGNC:6833]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013"	1
+MAP2K6	"mitogen-activated protein kinase kinase 6 [Source:HGNC Symbol;Acc:HGNC:6846]"	Diaz-Gimeno et al., 2011	1
+MFAP2	"microfibril associated protein 2 [Source:HGNC Symbol;Acc:HGNC:7033]"	Diaz-Gimeno et al., 2011	0
+MFAP5	"microfibril associated protein 5 [Source:HGNC Symbol;Acc:HGNC:29673]"	"Diaz-Gimeno et al., 2011 Hamamah, 2013 Top50"	1
+MMP10	"matrix metallopeptidase 10 [Source:HGNC Symbol;Acc:HGNC:7156]"	Enciso et al., 2013	0
+MMP26	"matrix metallopeptidase 26 [Source:HGNC Symbol;Acc:HGNC:14249]"	Diaz-Gimeno et al., 2011	0
+MMP9	"matrix metallopeptidase 9 [Source:HGNC Symbol;Acc:HGNC:7176]"	Enciso et al., 2013	0
+MORC4	"MORC family CW-type zinc finger 4 [Source:HGNC Symbol;Acc:HGNC:23485]"	Top50	0
+MPPED2	"metallophosphoesterase domain containing 2 [Source:HGNC Symbol;Acc:HGNC:1180]"	"Diaz-Gimeno et al., 2011 Top50"	1
+MRPS2	"mitochondrial ribosomal protein S2 [Source:HGNC Symbol;Acc:HGNC:14495]"	Diaz-Gimeno et al., 2011	0
+MSX1	"msh homeobox 1 [Source:HGNC Symbol;Acc:HGNC:7391]"	Diaz-Gimeno et al., 2011	1
+MT1G	"metallothionein 1G [Source:HGNC Symbol;Acc:HGNC:7399]"	Diaz-Gimeno et al., 2011	0
+MT1H	"metallothionein 1H [Source:HGNC Symbol;Acc:HGNC:7400]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013"	0
+MT1X	"metallothionein 1X [Source:HGNC Symbol;Acc:HGNC:7405]"	Enciso et al., 2013	0
+MT2A	"metallothionein 2A [Source:HGNC Symbol;Acc:HGNC:7406]"	Diaz-Gimeno et al., 2011	0
+MUC1	"mucin 1, cell surface associated [Source:HGNC Symbol;Acc:HGNC:7508]"	Enciso et al., 2013	0
+MUC16	"mucin 16, cell surface associated [Source:HGNC Symbol;Acc:HGNC:15582]"	Diaz-Gimeno et al., 2011	0
+MYL9	"myosin light chain 9 [Source:HGNC Symbol;Acc:HGNC:15754]"	Diaz-Gimeno et al., 2011	0
+NAA50	"N-alpha-acetyltransferase 50, NatE catalytic subunit [Source:HGNC Symbol;Acc:HGNC:29533]"	Top50	0
+NDC80	"NDC80 kinetochore complex component [Source:HGNC Symbol;Acc:HGNC:16909]"	Diaz-Gimeno et al., 2011	0
+NDRG2	"NDRG family member 2 [Source:HGNC Symbol;Acc:HGNC:14460]"	Diaz-Gimeno et al., 2011	0
+NFIA	"nuclear factor I A [Source:HGNC Symbol;Acc:HGNC:7784]"	Top50	1
+NKG7	"natural killer cell granule protein 7 [Source:HGNC Symbol;Acc:HGNC:7830]"	Diaz-Gimeno et al., 2011	0
+NNMT	"nicotinamide N-methyltransferase [Source:HGNC Symbol;Acc:HGNC:7861]"	Diaz-Gimeno et al., 2011	1
+NR4A2	"nuclear receptor subfamily 4 group A member 2 [Source:HGNC Symbol;Acc:HGNC:7981]"	Diaz-Gimeno et al., 2011	1
+NRG2	"neuregulin 2 [Source:HGNC Symbol;Acc:HGNC:7998]"	Diaz-Gimeno et al., 2011	0
+OFD1	"OFD1 centriole and centriolar satellite protein [Source:HGNC Symbol;Acc:HGNC:2567]"	Diaz-Gimeno et al., 2011	1
+OLFM1	"olfactomedin 1 [Source:HGNC Symbol;Acc:HGNC:17187]"	Diaz-Gimeno et al., 2011	0
+OLFM4	"olfactomedin 4 [Source:HGNC Symbol;Acc:HGNC:17190]"	Diaz-Gimeno et al., 2011	1
+OPRK1	"opioid receptor kappa 1 [Source:HGNC Symbol;Acc:HGNC:8154]"	"Diaz-Gimeno et al., 2011 Top50"	1
+P3H2	"prolyl 3-hydroxylase 2 [Source:HGNC Symbol;Acc:HGNC:19317]"	Diaz-Gimeno et al., 2011	0
+PAEP	"progestagen associated endometrial protein [Source:HGNC Symbol;Acc:HGNC:8573]"	Diaz-Gimeno et al., 2011	1
+PAQR4	"progestin and adipoQ receptor family member 4 [Source:HGNC Symbol;Acc:HGNC:26386]"	Diaz-Gimeno et al., 2011	1
+PBK	"PDZ binding kinase [Source:HGNC Symbol;Acc:HGNC:18282]"	Diaz-Gimeno et al., 2011	0
+PELI1	"pellino E3 ubiquitin protein ligase 1 [Source:HGNC Symbol;Acc:HGNC:8827]"	Top50	1
+PENK	"proenkephalin [Source:HGNC Symbol;Acc:HGNC:8831]"	Diaz-Gimeno et al., 2011	0
+PGR	"progesterone receptor [Source:HGNC Symbol;Acc:HGNC:8910]"	Enciso et al., 2013	0
+PLA1A	"phospholipase A1 member A [Source:HGNC Symbol;Acc:HGNC:17661]"	Diaz-Gimeno et al., 2011	0
+PLAAT3	"phospholipase A and acyltransferase 3 [Source:HGNC Symbol;Acc:HGNC:17825]"	Diaz-Gimeno et al., 2011	0
+PLAAT4	"phospholipase A and acyltransferase 4 [Source:HGNC Symbol;Acc:HGNC:9869]"	Diaz-Gimeno et al., 2011	0
+PMEPA1	"prostate transmembrane protein, androgen induced 1 [Source:HGNC Symbol;Acc:HGNC:14107]"	Diaz-Gimeno et al., 2011	0
+PNP	"purine nucleoside phosphorylase [Source:HGNC Symbol;Acc:HGNC:7892]"	Diaz-Gimeno et al., 2011	0
+POLD4	"DNA polymerase delta 4, accessory subunit [Source:HGNC Symbol;Acc:HGNC:14106]"	Diaz-Gimeno et al., 2011	0
+POSTN	"periostin [Source:HGNC Symbol;Acc:HGNC:16953]"	Diaz-Gimeno et al., 2011	0
+PPARGC1A	"PPARG coactivator 1 alpha [Source:HGNC Symbol;Acc:HGNC:9237]"	Diaz-Gimeno et al., 2011	0
+PPP2R2C	"protein phosphatase 2 regulatory subunit Bgamma [Source:HGNC Symbol;Acc:HGNC:9306]"	Enciso et al., 2013	0
+PRC1	"protein regulator of cytokinesis 1 [Source:HGNC Symbol;Acc:HGNC:9341]"	Diaz-Gimeno et al., 2011	1
+PRDM4	"PR/SET domain 4 [Source:HGNC Symbol;Acc:HGNC:9348]"	HouseKeeping	0
+PRKCQ	"protein kinase C theta [Source:HGNC Symbol;Acc:HGNC:9410]"	Diaz-Gimeno et al., 2011	1
+PROK1	"prokineticin 1 [Source:HGNC Symbol;Acc:HGNC:18454]"	"Enciso et al., 2013 Hamamah, 2013"	0
+PROM1	"prominin 1 [Source:HGNC Symbol;Acc:HGNC:9454]"	Diaz-Gimeno et al., 2011	0
+PROS1	"protein S [Source:HGNC Symbol;Acc:HGNC:9456]"	Diaz-Gimeno et al., 2011	0
+PRR15L	"proline rich 15 like [Source:HGNC Symbol;Acc:HGNC:28149]"	"Diaz-Gimeno et al., 2011 Top50"	0
+PSMB10	"proteasome 20S subunit beta 10 [Source:HGNC Symbol;Acc:HGNC:9538]"	Diaz-Gimeno et al., 2011	0
+PTGER2	"prostaglandin E receptor 2 [Source:HGNC Symbol;Acc:HGNC:9594]"	Diaz-Gimeno et al., 2011	0
+PTGFR	"prostaglandin F receptor [Source:HGNC Symbol;Acc:HGNC:9600]"	Enciso et al., 2013	0
+PTGS1	"prostaglandin-endoperoxide synthase 1 [Source:HGNC Symbol;Acc:HGNC:9604]"	Enciso et al., 2013	0
+PTPRR	"protein tyrosine phosphatase receptor type R [Source:HGNC Symbol;Acc:HGNC:9680]"	Diaz-Gimeno et al., 2011	1
+RAB40B	"RAB40B, member RAS oncogene family [Source:HGNC Symbol;Acc:HGNC:18284]"	Top50	0
+RACGAP1	"Rac GTPase activating protein 1 [Source:HGNC Symbol;Acc:HGNC:9804]"	Enciso et al., 2013	0
+RAD54B	"RAD54 homolog B [Source:HGNC Symbol;Acc:HGNC:17228]"	Diaz-Gimeno et al., 2011	0
+RANBP17	"RAN binding protein 17 [Source:HGNC Symbol;Acc:HGNC:14428]"	Diaz-Gimeno et al., 2011	0
+RARRES1	"retinoic acid receptor responder 1 [Source:HGNC Symbol;Acc:HGNC:9867]"	Diaz-Gimeno et al., 2011	0
+RASSF2	"Ras association domain family member 2 [Source:HGNC Symbol;Acc:HGNC:9883]"	Diaz-Gimeno et al., 2011	1
+RDH10	"retinol dehydrogenase 10 [Source:HGNC Symbol;Acc:HGNC:19975]"	Top50	0
+RETREG1	"reticulophagy regulator 1 [Source:HGNC Symbol;Acc:HGNC:25964]"	Diaz-Gimeno et al., 2011	0
+RHPN2	"rhophilin Rho GTPase binding protein 2 [Source:HGNC Symbol;Acc:HGNC:19974]"	Top50	0
+RNASE4	"ribonuclease A family member 4 [Source:HGNC Symbol;Acc:HGNC:10047]"	Diaz-Gimeno et al., 2011	0
+RPL13A	"ribosomal protein L13a [Source:HGNC Symbol;Acc:HGNC:10304]"	Enciso et al., 2013	0
+RPL30	"ribosomal protein L30 [Source:HGNC Symbol;Acc:HGNC:10333]"	HouseKeeping	0
+RPRM	"reprimo, TP53 dependent G2 arrest mediator homolog [Source:HGNC Symbol;Acc:HGNC:24201]"	Diaz-Gimeno et al., 2011	0
+RRAS	"RAS related [Source:HGNC Symbol;Acc:HGNC:10447]"	Diaz-Gimeno et al., 2011	0
+S100A1	"S100 calcium binding protein A1 [Source:HGNC Symbol;Acc:HGNC:10486]"	Diaz-Gimeno et al., 2011	0
+S100A4	"S100 calcium binding protein A4 [Source:HGNC Symbol;Acc:HGNC:10494]"	Diaz-Gimeno et al., 2011	0
+S100P	"S100 calcium binding protein P [Source:HGNC Symbol;Acc:HGNC:10504]"	Diaz-Gimeno et al., 2011	1
+SCGB2A2	"secretoglobin family 2A member 2 [Source:HGNC Symbol;Acc:HGNC:7050]"	"Diaz-Gimeno et al., 2011 Enciso et al., 2013"	1
+SCGB3A1	"secretoglobin family 3A member 1 [Source:HGNC Symbol;Acc:HGNC:18384]"	Enciso et al., 2013	0
+SELL	"selectin L [Source:HGNC Symbol;Acc:HGNC:10720]"	Enciso et al., 2013	0
+SERPINA5	"serpin family A member 5 [Source:HGNC Symbol;Acc:HGNC:8723]"	Diaz-Gimeno et al., 2011	0
+SERPING1	"serpin family G member 1 [Source:HGNC Symbol;Acc:HGNC:1228]"	Diaz-Gimeno et al., 2011	0
+SFRP4	"secreted frizzled related protein 4 [Source:HGNC Symbol;Acc:HGNC:10778]"	Diaz-Gimeno et al., 2011	0
+SLC15A1	"solute carrier family 15 member 1 [Source:HGNC Symbol;Acc:HGNC:10920]"	Diaz-Gimeno et al., 2011	1
+SLC15A2	"solute carrier family 15 member 2 [Source:HGNC Symbol;Acc:HGNC:10921]"	Diaz-Gimeno et al., 2011	0
+SLC16A6	"solute carrier family 16 member 6 [Source:HGNC Symbol;Acc:HGNC:10927]"	Diaz-Gimeno et al., 2011	1
+SLC1A1	"solute carrier family 1 member 1 [Source:HGNC Symbol;Acc:HGNC:10939]"	"Diaz-Gimeno et al., 2011 Top50"	0
+SLC38A1	"solute carrier family 38 member 1 [Source:HGNC Symbol;Acc:HGNC:13447]"	Diaz-Gimeno et al., 2011	0
+SLC44A1	"solute carrier family 44 member 1 [Source:HGNC Symbol;Acc:HGNC:18798]"	Top50	0
+SLC7A1	"solute carrier family 7 member 1 [Source:HGNC Symbol;Acc:HGNC:11057]"	Diaz-Gimeno et al., 2011	1
+SLC7A2	"solute carrier family 7 member 2 [Source:HGNC Symbol;Acc:HGNC:11060]"	Top50	0
+SLPI	"secretory leukocyte peptidase inhibitor [Source:HGNC Symbol;Acc:HGNC:11092]"	Diaz-Gimeno et al., 2011	0
+SNX10	"sorting nexin 10 [Source:HGNC Symbol;Acc:HGNC:14974]"	Diaz-Gimeno et al., 2011	0
+SOD2	"superoxide dismutase 2 [Source:HGNC Symbol;Acc:HGNC:11180]"	"Diaz-Gimeno et al., 2011 Top50"	1
+SORCS1	"sortilin related VPS10 domain containing receptor 1 [Source:HGNC Symbol;Acc:HGNC:16697]"	Hamamah, 2013	0
+SORD	"sorbitol dehydrogenase [Source:HGNC Symbol;Acc:HGNC:11184]"	Diaz-Gimeno et al., 2011	0
+SOX17	"SRY-box transcription factor 17 [Source:HGNC Symbol;Acc:HGNC:18122]"	Diaz-Gimeno et al., 2011	1
+SPDEF	"SAM pointed domain containing ETS transcription factor [Source:HGNC Symbol;Acc:HGNC:17257]"	Diaz-Gimeno et al., 2011	1
+SPP1	"secreted phosphoprotein 1 [Source:HGNC Symbol;Acc:HGNC:11255]"	Diaz-Gimeno et al., 2011	0
+SRRM2	"serine/arginine repetitive matrix 2 [Source:HGNC Symbol;Acc:HGNC:16639]"	HouseKeeping	0
+STAR	"steroidogenic acute regulatory protein [Source:HGNC Symbol;Acc:HGNC:11359]"	Diaz-Gimeno et al., 2011	0
+STC1	"stanniocalcin 1 [Source:HGNC Symbol;Acc:HGNC:11373]"	Enciso et al., 2013	1
+STEAP4	"STEAP4 metalloreductase [Source:HGNC Symbol;Acc:HGNC:21923]"	Diaz-Gimeno et al., 2011	1
+SYNE2	"spectrin repeat containing nuclear envelope protein 2 [Source:HGNC Symbol;Acc:HGNC:17084]"	Diaz-Gimeno et al., 2011	1
+TACC3	"transforming acidic coiled-coil containing protein 3 [Source:HGNC Symbol;Acc:HGNC:11524]"	Diaz-Gimeno et al., 2011	0
+TAGLN	"transgelin [Source:HGNC Symbol;Acc:HGNC:11553]"	Diaz-Gimeno et al., 2011	0
+TBC1D2	"TBC1 domain family member 2 [Source:HGNC Symbol;Acc:HGNC:18026]"	Diaz-Gimeno et al., 2011	0
+TCN1	"transcobalamin 1 [Source:HGNC Symbol;Acc:HGNC:11652]"	Diaz-Gimeno et al., 2011	0
+TFF3	"trefoil factor 3 [Source:HGNC Symbol;Acc:HGNC:11757]"	Enciso et al., 2013	0
+TH	"tyrosine hydroxylase [Source:HGNC Symbol;Acc:HGNC:11782]"	Diaz-Gimeno et al., 2011	0
+THBD	"thrombomodulin [Source:HGNC Symbol;Acc:HGNC:11784]"	Diaz-Gimeno et al., 2011	0
+THBS2	"thrombospondin 2 [Source:HGNC Symbol;Acc:HGNC:11786]"	Diaz-Gimeno et al., 2011	0
+TIMP3	"TIMP metallopeptidase inhibitor 3 [Source:HGNC Symbol;Acc:HGNC:11822]"	Diaz-Gimeno et al., 2011	0
+TMSB15A	"thymosin beta 15A [Source:HGNC Symbol;Acc:HGNC:30744]"	Diaz-Gimeno et al., 2011	0
+TOP2A	"DNA topoisomerase II alpha [Source:HGNC Symbol;Acc:HGNC:11989]"	Diaz-Gimeno et al., 2011	0
+TRH	"thyrotropin releasing hormone [Source:HGNC Symbol;Acc:HGNC:12298]"	Diaz-Gimeno et al., 2011	0
+TRIM22	"tripartite motif containing 22 [Source:HGNC Symbol;Acc:HGNC:16379]"	Top50	1
+TRPC4	"transient receptor potential cation channel subfamily C member 4 [Source:HGNC Symbol;Acc:HGNC:12336]"	Hamamah, 2013	0
+TSPAN15	"tetraspanin 15 [Source:HGNC Symbol;Acc:HGNC:23298]"	Top50	0
+TSPAN8	"tetraspanin 8 [Source:HGNC Symbol;Acc:HGNC:11855]"	Diaz-Gimeno et al., 2011	1
+TTC21B	"tetratricopeptide repeat domain 21B [Source:HGNC Symbol;Acc:HGNC:25660]"	Diaz-Gimeno et al., 2011	1
+UBE2D2	"ubiquitin conjugating enzyme E2 D2 [Source:HGNC Symbol;Acc:HGNC:12475]"	HouseKeeping	0
+UBE4A	"ubiquitination factor E4A [Source:HGNC Symbol;Acc:HGNC:12499]"	HouseKeeping	0
+VAV3	"vav guanine nucleotide exchange factor 3 [Source:HGNC Symbol;Acc:HGNC:12659]"	Top50	0
+VCAM1	"vascular cell adhesion molecule 1 [Source:HGNC Symbol;Acc:HGNC:12663]"	Diaz-Gimeno et al., 2011	0
+WHRN	"whirlin [Source:HGNC Symbol;Acc:HGNC:16361]"	Diaz-Gimeno et al., 2011	0
+XCL1	"X-C motif chemokine ligand 1 [Source:HGNC Symbol;Acc:HGNC:10645]"	Diaz-Gimeno et al., 2011	0
+XCL2	"X-C motif chemokine ligand 2 [Source:HGNC Symbol;Acc:HGNC:10646]"	Diaz-Gimeno et al., 2011	0
+ZBTB16	"zinc finger and BTB domain containing 16 [Source:HGNC Symbol;Acc:HGNC:12930]"	Top50	0
+ZNF22-AS1	"ZNF22 antisense RNA 1 [Source:HGNC Symbol;Acc:HGNC:23509]"	Top50	0
