@@ -27,7 +27,7 @@ test_dat <-
 
 ```
 
-```{r, child = "./model_visualise_summarise.rmd"}
+```{r, child = "./analysis/model_visualise_summarise.rmd"}
 ## use child rmarkdown document for visualisation
 ```
 
@@ -49,7 +49,7 @@ ref_dat <-
 ## test set is recycled
 ```
 
-```{r, child = "./model_visualise_summarise.rmd"}
+```{r, child = "./analysis/model_visualise_summarise.rmd"}
 ## use child rmarkdown document for visualisation
 ```
 
@@ -82,7 +82,7 @@ test_dat <-
 
 ```
 
-```{r, child = "./model_visualise_summarise.rmd"}
+```{r, child = "./analysis/model_visualise_summarise.rmd"}
 ## use child rmarkdown document for visualisation
 ```
 
@@ -103,7 +103,7 @@ ref_dat <-
 ## test set is recycled
 ```
 
-```{r, child = "./model_visualise_summarise.rmd"}
+```{r, child = "./analysis/model_visualise_summarise.rmd"}
 ## use child rmarkdown document for visualisation
 ```
 

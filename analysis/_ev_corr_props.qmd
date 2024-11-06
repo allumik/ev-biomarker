@@ -1,0 +1,114 @@
+### Stromal {.unnumbered .unlisted}
+
+The proportions of the cell types within the general celltypes.
+
+```{python}
+general_ct = 'Stromal'
+
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+```
+
+### Epithelium {.unnumbered .unlisted}
+
+The proportions of the cell types within the general celltypes.
+
+```{python}
+general_ct = 'Epithelium'
+
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+```
+
+### Vascular {.unnumbered .unlisted}
+
+The proportions of the cell types within the general celltypes.
+
+```{python}
+general_ct = 'Vascular'
+
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+```
+
+### Mesenchymal {.unnumbered .unlisted}
+
+The proportions of the cell types within the general celltypes.
+
+```{python}
+general_ct = 'Mesenchymal'
+
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+```
+
+### Immune {.unnumbered .unlisted}
+
+The proportions of the cell types within the general celltypes.
+
+```{python}
+general_ct = 'Immune'
+
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+```
+
+### Ciliated Epithelium {.unnumbered .unlisted}
+
+The proportions of the cell types within the general celltypes.
+
+```{python}
+general_ct = 'Ciliated Epithelium'
+
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+```
+

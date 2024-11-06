@@ -41,6 +41,7 @@ from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
+from sklearn.preprocessing import normalize
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -48,6 +49,7 @@ load_dotenv()
 anndata_folder = getenv("ANNDATA_FOLDER")
 atlas_folder = getenv("ATLAS_FOLDER")
 data_folder = getenv("DATA_FOLDER")
+raw_data_folder = getenv("RAW_DATA_FOLDER")
 
 
 ## define a function for the data extraction
@@ -147,34 +149,52 @@ gen_celltype_dict = {
   "Immune_Myeloid": gen_celltype_order[5]
 }
 
-
-
 ```
 
-Load in the data, filter out "Hormones" celltypes and non-endometriotic samples and finally do some preprocessing:
+Preprocessing for the HECA dataset:
+
+1) Load in the data
+2) join the immune cell annotation with the main dataset celltype annotation (all immune cells are in the main dataset)
+3) filter out "Hormones" celltypes and endometriotic samples 
+4) do some preprocessing
 
 ```{python}
 #| output: false
 
-## Load the predictions and join with the large matrix
+## Load the main HECA dataset
 sc_dat = sc.read_h5ad(
-  Path(anndata_folder).expanduser() / "comb_heca.h5ad",
+  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_with_counts.h5ad",
   backed = "r"
-  )
+)
+
+sc_dat_immu = sc.read_h5ad(
+  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
+  backed = "r"
+)
 
 sc_dat.obs = (
   sc_dat.obs
   .assign(
     cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
-    celltype_general=lambda x: x.celltype.cat.remove_unused_categories()
+    celltype_general=lambda x: x.celltype.cat.remove_unused_categories(),
+    celltype=lambda x: 
+      x.celltype
+      .astype("object")
+      .mask(
+        x.index.isin(sc_dat_immu.obs.celltype.index), 
+        sc_dat_immu.obs.celltype.astype("object")
+      )
+      .astype("category")
   )
   .replace({ "celltype_general": gen_celltype_dict })
+  .assign(celltype_general=lambda x: 
+    pd.Categorical(x.celltype_general, categories = gen_celltype_order, ordered=True))
+  .rename(columns={"sample": "samplename"})
 )
 
-## exclude the HUTER data
 ## exclude some celltypes, such as she hormones cell types
 ## also exclude the endometriosis samples
-the_condition = "dataset != 'HUTER' & celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
+the_condition = "celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
 sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
 sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
@@ -182,11 +202,16 @@ sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=30
 # check the minimum size of celltype matrix after filtering
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
 
+```
+
+Load in the bulk data from the EV and biopsy samples
+
+```{python}
 
 ## load in the EV data
-comb_uf_mat = pd.read_feather(Path(data_folder).expanduser() / "comb_uf_tpm.feather").set_index("gene_id")
-comb_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "comb_uf_pheno.tsv").set_index("samplename")
-comb_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "comb_uf.feather").set_index("gene_id")
+comb_uf_mat = pd.read_feather(Path(data_folder).expanduser() / "combined" / "comb_uf_tpm.feather").set_index("gene_id")
+comb_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "combined" / "comb_uf_pheno.tsv").set_index("samplename")
+comb_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "combined" / "comb_uf.feather").set_index("gene_id")
 ## and reformat and join the data into long data (for better visuals)
 comb_uf = (
   comb_uf_mat
@@ -201,10 +226,10 @@ comb_uf = (
 )
 
 clin_de_genes = pd.read_table(Path(data_folder).expanduser() / "clin_de_genes.tsv").locus.to_list()
-uf_bio_genes = pd.read_table(Path(data_folder).expanduser() / "uf_bio_genes.tsv").locus.to_list()
+uf_bio_genes = pd.read_table(Path(data_folder).expanduser() / "combined" / "uf_bio_genes.tsv").locus.to_list()
 
 ## load in the SCRATCH clinical bio data
-scratch_mat = pd.read_feather(Path(data_folder).expanduser() / "star_mat_pheno.feather").set_index("sample")
+scratch_mat = pd.read_feather(Path(raw_data_folder).expanduser() / "star_mat_pheno.feather").set_index("sample")
 cols_to_keep = ["HID", "ages", "Timing_LH", "status_rif", "no_lb"]
 scratch_pheno = scratch_mat[cols_to_keep]
 scratch_mat = (
@@ -215,15 +240,15 @@ scratch_mat = (
 )
 
 ## load in the EV CCHT only data
-ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "annot_raw.feather").set_index("gene_id")
-ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "phenotype.tsv").set_index("samplename")
+ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "orig" / "annot_raw.feather").set_index("gene_id")
+ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "orig" / "phenotype.tsv").set_index("samplename")
 
 ## load in clinical samples
 clin_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "clin_counts_raw.feather")
 clin_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "phenotype_clin.tsv").set_index("samplename")
 clin_uf_pheno = clin_uf_pheno.query("samplename in @clin_uf_raw.columns")
 ## change the gene_id for the clinical samples
-annot = pd.read_csv(Path(data_folder).expanduser() / "annot_table.csv")
+annot = pd.read_csv(Path(raw_data_folder).expanduser() / "annot_table.csv")
 clin_uf_raw = (
   clin_uf_raw
   .merge(annot, left_on='gene_id', right_on='ensembl_gene_id')
@@ -324,7 +349,7 @@ First lets look at the expression changes of **implantation or implantation fail
     ymax="se_max",
     color="celltype_general"
   )
-  .layout(size=(9,36))
+  # .layout(size=(6,6))
   .add(so.Line())
   .add(so.Band(alpha=.2))
   .facet(None, "gene_id", wrap=11)
@@ -338,7 +363,7 @@ Then, lets look at the **UF+Bio geneset** profile in different cell types.
 
 ```{python}
 #| output: false
- 
+
 sc_obs_tmp = gene_x_sample_view(
     sc_dat[
       sc_dat.obs
@@ -566,7 +591,7 @@ def cor_table(fracs_long) -> pd.DataFrame:
 
 fractions_folder = Path(data_folder) / "tape_fractions"
 fractions_file = fractions_folder / "comb_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists():
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -626,29 +651,58 @@ As the proportions add up to one, we can also generate a stacked barplot for the
 ```{python}
 
 dendro_barplot(
-  frac_pred, 
+  frac_pred,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
   legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
-  legend_class_ncol=2
+  legend_class_ncol=3
   )
 
 ```
 
-The same plot as before, but with major celltype proportions.
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, comb_uf_pheno)
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
+
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -724,6 +778,8 @@ res_join.to_excel(fractions_folder / "comb_bio.xlsx", sheet_name="combined_bio")
 The deconvolution results of both biopsy and UF samples as an heatmap:
 
 ```{python}
+# subset only uf samples
+frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
 
 # create a colormap
 lut = dict(zip(
@@ -743,8 +799,6 @@ row_colors = comb_uf_pheno.reindex(
   comb_uf_pheno.query("group == 'UF'").index.values
   ).cyclephase.astype("object").map(lut)
 
-# subset only uf samples
-frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
 dash_bio.Clustergram(
   data=frac_tmp,
   column_labels=list(frac_tmp.columns.values),
@@ -764,30 +818,58 @@ As the proportions add up to one, we can also generate a stacked barplot for the
 ```{python}
 
 dendro_barplot(
-  frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index],
+  frac_tmp,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
   legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
-  legend_class_ncol=2
+  legend_class_ncol=3
   )
 
 ```
 
-The same plot as before, but with major celltype proportions.
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .loc[comb_uf_pheno.query("group == 'UF'").index]
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_tmp.filter(focus_celltypes, axis=1),
+  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
+  index=frac_tmp.index
 )
 
-dendro_barplot(frac_pred_gen, comb_uf_pheno)
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
+
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -834,7 +916,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index], comb_uf_pheno)
+frac_long = convert_to_long(frac_tmp, comb_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -861,6 +943,8 @@ res_join.to_excel(fractions_folder / "comb_uf.xlsx", sheet_name="combined_uf")
 The deconvolution results of both biopsy and UF samples as an heatmap:
 
 ```{python}
+# subset only uf samples
+frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
 
 # create a colormap
 lut = dict(zip(
@@ -880,8 +964,6 @@ row_colors = comb_uf_pheno.reindex(
   comb_uf_pheno.query("group == 'biopsy'").index.values
   ).cyclephase.astype("object").map(lut)
 
-# subset only uf samples
-frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
 dash_bio.Clustergram(
   data=frac_tmp,
   column_labels=list(frac_tmp.columns.values),
@@ -901,30 +983,59 @@ As the proportions add up to one, we can also generate a stacked barplot for the
 ```{python}
 
 dendro_barplot(
-  frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index],
+  frac_tmp,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
   legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
-  legend_class_ncol=2
+  legend_class_ncol=3
   )
 
 ```
 
-The same plot as before, but with major celltype proportions.
+
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .loc[comb_uf_pheno.query("group == 'biopsy'").index]
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_tmp.filter(focus_celltypes, axis=1),
+  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
+  index=frac_tmp.index
 )
 
-dendro_barplot(frac_pred_gen, comb_uf_pheno)
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
+
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -933,8 +1044,8 @@ Apply PCA on the proportions.
 ## don't scale as the counts are props anyways
 pca = PCA(n_components=2)
 pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index].index)
+  pd.DataFrame(data=pca.fit_transform(frac_tmp), columns=["PC1", "PC2"])
+  .set_index(frac_tmp.index)
   .merge(comb_uf_pheno, left_index=True, right_index=True)
 )
 expl_var = pca.explained_variance_ratio_
@@ -971,7 +1082,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index], comb_uf_pheno)
+frac_long = convert_to_long(frac_tmp, comb_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -1040,7 +1151,7 @@ lut = dict(zip(
   sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
   ))
 
-row_colors =ccht_uf_pheno.reindex(
+row_colors = ccht_uf_pheno.reindex(
   ccht_uf_pheno.query("group == 'UF'").index.values
   ).cyclephase.astype("object").map(lut)
 
@@ -1069,25 +1180,55 @@ dendro_barplot(
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, 0.1),
   legend_class_bbox=(1.05, 0.1),
-  legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
+  legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
 
 ```
 
-The same plot as before, but with major celltype proportions.
+
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, ccht_uf_pheno)
+dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
+
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -1163,12 +1304,14 @@ res_join.to_excel(fractions_folder / "ccht_bio.xlsx", sheet_name="ccht_bio")
 This dataset has only CCHT samples of EV variety, this means without batch correction applied.
 
 ```{python}
+# subset only uf samples
+frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
 
 # create a colormap
 lut = dict(zip(
   general_cells.celltype_general.unique(),
   sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
+))
 
 col_colors = general_cells.celltype_general.astype("object").map(lut)
 
@@ -1182,8 +1325,6 @@ row_colors = ccht_uf_pheno.reindex(
   ccht_uf_pheno.query("group == 'UF'").index.values
   ).cyclephase.astype("object").map(lut)
 
-# subset only uf samples
-frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
 dash_bio.Clustergram(
   data=frac_tmp,
   column_labels=list(frac_tmp.columns.values),
@@ -1203,30 +1344,58 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 ```{python}
 
 dendro_barplot(
-  frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index], 
+  frac_tmp, 
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
-  legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
+  legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
 
 ```
 
-The same plot as before, but with major celltype proportions.
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .loc[ccht_uf_pheno.query("group == 'UF'").index]
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_tmp.filter(focus_celltypes, axis=1),
+  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
+  index=frac_tmp.index
 )
 
-dendro_barplot(frac_pred_gen, ccht_uf_pheno)
+dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
+
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -1235,8 +1404,8 @@ Apply PCA on the proportions.
 ## don't scale as the counts are props anyways
 pca = PCA(n_components=2)
 pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index].index)
+  pd.DataFrame(data=pca.fit_transform(frac_tmp), columns=["PC1", "PC2"])
+  .set_index(frac_tmp.index)
   .merge(ccht_uf_pheno, left_index=True, right_index=True)
 )
 expl_var = pca.explained_variance_ratio_
@@ -1273,7 +1442,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index], ccht_uf_pheno)
+frac_long = convert_to_long(frac_tmp, ccht_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -1300,6 +1469,8 @@ res_join.to_excel(fractions_folder / "ccht_uf.xlsx", sheet_name="ccht_uf")
 This dataset has only CCHT samples of biopsies, this means without batch correction applied.
 
 ```{python}
+# subset only uf samples
+frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
 
 # create a colormap
 lut = dict(zip(
@@ -1319,8 +1490,6 @@ row_colors = ccht_uf_pheno.reindex(
   ccht_uf_pheno.query("group == 'biopsy'").index.values
   ).cyclephase.astype("object").map(lut)
 
-# subset only uf samples
-frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
 dash_bio.Clustergram(
   data=frac_tmp,
   column_labels=list(frac_tmp.columns.values),
@@ -1340,30 +1509,58 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 ```{python}
 
 dendro_barplot(
-  frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index], 
+  frac_tmp, 
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
-  legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
+  legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
 
 ```
 
-The same plot as before, but with major celltype proportions.
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .loc[ccht_uf_pheno.query("group == 'biopsy'").index]
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_tmp.filter(focus_celltypes, axis=1),
+  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
+  index=frac_tmp.index
 )
 
-dendro_barplot(frac_pred_gen, ccht_uf_pheno)
+dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
+
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -1372,8 +1569,8 @@ Apply PCA on the proportions.
 ## don't scale as the counts are props anyways
 pca = PCA(n_components=2)
 pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index].index)
+  pd.DataFrame(data=pca.fit_transform(frac_tmp), columns=["PC1", "PC2"])
+  .set_index(frac_tmp.index)
   .merge(ccht_uf_pheno, left_index=True, right_index=True)
 )
 expl_var = pca.explained_variance_ratio_
@@ -1410,7 +1607,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index], ccht_uf_pheno)
+frac_long = convert_to_long(frac_tmp, ccht_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -1457,7 +1654,7 @@ general_cells = (
 )
 
 # save it for later
-scratch_pred = frac_pred
+scratch_pred = frac_pred.copy()
 
 ```
 
@@ -1512,20 +1709,48 @@ dendro_barplot(
 
 ```
 
-The same plot as before, but with major celltype proportions.
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, scratch_pheno, pheno_dat_col="no_lb")
+dendro_barplot(frac_pred_gen, scratch_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
 
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -1584,7 +1809,6 @@ ttest_table = pd.DataFrame({
 ttest_table.to_excel(fractions_folder / "scratch_test.xlsx", sheet_name="scratch")
 
 ```
-
 
 
 ## Clinical samples
@@ -1664,20 +1888,48 @@ dendro_barplot(
 
 ```
 
-The same plot as before, but with major celltype proportions.
+Or by major cell types:
+
+::: {.panel-tabset}
 
 ```{python}
 
-frac_pred_gen = (
-  frac_pred
-  .groupby(general_cells["celltype_general"], axis=1)
-  .sum()
+the_code_block = """
+focus_celltypes = general_cells.query("celltype_general == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, clin_uf_pheno, pheno_dat_col="implantation")
+dendro_barplot(frac_pred_gen, clin_uf_pheno, legend_class_ncol=2)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
 
 ```
 
+{{< include _ev_corr_props.qmd >}}
+
+:::
 
 Apply PCA on the proportions.
 
@@ -1722,18 +1974,18 @@ Perform t-test for the pairwise differences of RIF and CTRL samples for each cel
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred, clin_uf_pheno)
+# frac_long = convert_to_long(frac_pred, clin_uf_pheno)
 
 # write the t-testing function
-ttest_table = pd.DataFrame({
-  celltype: {
-    "z_stat": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).statistic,
-    "p-val": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).pvalue,
-  }
-  for celltype, dat in frac_long.groupby("celltype")
-}).T
+# ttest_table = pd.DataFrame({
+#   celltype: {
+#     "z_stat": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).statistic,
+#     "p-val": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).pvalue,
+#   }
+#   for celltype, dat in frac_long.drop(columns=["n_transfer_embryo"]).groupby("celltype")
+# }).T
 
-ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
+# ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
 
 ```
 
@@ -1791,7 +2043,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
 mah_res = pd.DataFrame(
   list_to_df,
   columns=["cyclephase", "celltype", "samplename", "mah_dist"]
-  ).set_index("samplename")
+).set_index("samplename")
 
 mah_means = {}
 for cyclephase in frac_ccht.cyclephase.unique():

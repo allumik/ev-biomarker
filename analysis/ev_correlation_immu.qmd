@@ -100,7 +100,7 @@ comb_uf = (
     id_vars=comb_uf_pheno.columns.to_list(),
     var_name="gene_id",
     value_name="norm_expr"
-    )
+  )
 )
 
 clin_de_genes = pd.read_table(Path(data_folder).expanduser() / "clin_de_genes.tsv").locus.to_list()

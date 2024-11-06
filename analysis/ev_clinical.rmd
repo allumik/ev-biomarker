@@ -59,7 +59,10 @@ comb_expr_tpm <-
 
 ## write out the de genes
 out_join %>%
-  write_tsv("./genesets/clin_de_genes.tsv")
+  write_tsv("./data/clin_de_genes.tsv")
+
+out_join_fdrless %>%
+  write_tsv("./data/clin_de_genes_fdrless.tsv")
 
 ```
 

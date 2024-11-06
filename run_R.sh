@@ -16,6 +16,9 @@
 module load singularity/3.8.5
 singularity exec --nv $HOME/.containers/base_env.sif \
   ~/.local/bin/micromamba run -n renv-ev \
+  R -e "rmarkdown::render('./analysis/ev_biomarker.rmd', knit_root_dir = '~/proj/ev-biomarker/')"
+singularity exec --nv $HOME/.containers/base_env.sif \
+  ~/.local/bin/micromamba run -n renv-ev \
   R -e "rmarkdown::render('./analysis/ev_clinical.rmd', knit_root_dir = '~/proj/ev-biomarker/')"
 # singularity exec --nv $HOME/.containers/base_env.sif \
   # ~/.local/bin/micromamba run -n sc-base quarto render ./analysis/ev_clinical.qmd --to html

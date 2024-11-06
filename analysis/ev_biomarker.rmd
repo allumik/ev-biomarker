@@ -27,14 +27,14 @@ Setup the environment and load dependencies, defined in external `back.R` script
 ## !RUNTHIS
 
 ## load the project dependencies
-source("../scripts/load_deps.R")
+source("./scripts/load_deps.R")
 
 ## load the model metrics functions
-source("../scripts/metrics_functions.R")
+source("./scripts/metrics_functions.R")
 
 ## check if theres a R data object already, othewise run the data muncher
 # and save the preprocessed data into the RData
-data_subfolder <- "../data/orig/"
+data_subfolder <- "./data/orig/"
 dataobj <- paste0(data_subfolder, "ev_data.RData")
 if (file.exists(dataobj)) {
   load(dataobj)
@@ -43,7 +43,7 @@ if (file.exists(dataobj)) {
   commandArgs <- function(...)
     list(data_subfolder = data_subfolder)
   dir.create(data_subfolder, showWarnings = F)
-  invisible(source("../scripts/de_runner.R"))
+  invisible(source("./scripts/de_runner.R"))
   save.image(file = dataobj)
 }
 
@@ -150,12 +150,12 @@ From these preliminary clusterings we can see that the HUT23 paired sample seems
 rm(list = ls())
 
 ## reload the project dependencies
-source("../scripts/load_deps.R")
+source("./scripts/load_deps.R")
 
 ## reload the model metrics functions
-source("../scripts/metrics_functions.R")
+source("./scripts/metrics_functions.R")
 
-data_subfolder <- "../data/filtered/"
+data_subfolder <- "./data/filtered/"
 dataobj <- paste0(data_subfolder, "ev_data_filt.RData")
 if (file.exists(dataobj)) {
   load(dataobj)
@@ -168,7 +168,7 @@ if (file.exists(dataobj)) {
       data_subfolder = data_subfolder
       ) #  c("HUT71_UF", "HUT1_UF", "HUT01_UF", "HUT17_UF", "HUT10_UF"))
   dir.create(data_subfolder, showWarnings = F)
-  invisible(source("../scripts/de_runner.R"))
+  invisible(source("./scripts/de_runner.R"))
   save.image(file = dataobj)
 }
 
@@ -869,7 +869,7 @@ filt_counts %>%
   scale_fill_manual(values = status_grouping) +
   scale_y_discrete(limits = rev)
 
-# ggsave("../figures/box_ted.svg", width = 6, height = 9)
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
 
 ```
 
@@ -998,7 +998,7 @@ filt_counts %>%
   scale_fill_manual(values = status_grouping) +
   scale_y_discrete(limits = rev)
 
-# ggsave("../figures/box_ted.svg", width = 6, height = 9)
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
 
 ```
 
@@ -1343,7 +1343,7 @@ The parameters used on the website were:
 ## !RUNTHIS
 
 # load in
-hs_set <- read_csv("../data_raw/hrt_uterus_rpkm69.csv")
+hs_set <- read_csv("./data_raw/hrt_uterus_rpkm69.csv")
 
 # show the table of housekeepers
 hs_set %>% downtable(filterable = T)
@@ -1581,7 +1581,7 @@ select_box <-
 
 all_box / select_box + plot_layout(ncol = 1, heights = c(7, 1))
 
-# ggsave("../figures/box_ted.svg", width = 6, height = 9)
+# ggsave("./figures/box_ted.svg", width = 6, height = 9)
 ```
 
 
@@ -1656,7 +1656,7 @@ uf_dyn_genes %<>%
 
 ```
 
-```{r, child = "./test_samplesets.rmd"}
+```{r, child = "./analysis/test_samplesets.rmd"}
 ## use child rmarkdown document for running the testing repeatedly
 ```
 
@@ -1714,7 +1714,7 @@ uf_dyn_genes %<>%
 
 ```
 
-```{r, child = "./test_samplesets.rmd"}
+```{r, child = "./analysis/test_samplesets.rmd"}
 ## use child rmarkdown document for running the testing repeatedly
 ```
 
