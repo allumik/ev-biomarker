@@ -107,8 +107,8 @@ gen_celltype_order = [
 
 ## the celltype generalisation
 gen_celltype_dict = {
-  "Ciliated": gen_celltype_order[0],
-  "preCiliated": gen_celltype_order[0],
+  "Ciliated": gen_celltype_order[1],
+  "preCiliated": gen_celltype_order[1],
   "SOX9_basalis": gen_celltype_order[1],
   "SOX9_functionalis_I": gen_celltype_order[1],
   "SOX9_functionalis_II": gen_celltype_order[1],
@@ -591,7 +591,7 @@ def cor_table(fracs_long) -> pd.DataFrame:
 
 fractions_folder = Path(data_folder) / "tape_fractions"
 fractions_file = fractions_folder / "comb_fracs.tsv"
-if fractions_file.expanduser().exists():
+if not fractions_file.expanduser().exists():
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -681,7 +681,7 @@ dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_comb.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -700,7 +700,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_comb.qmd >}}
 
 :::
 
@@ -848,7 +848,7 @@ dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_subcomb.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -867,7 +867,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_subcomb.qmd >}}
 
 :::
 
@@ -1014,7 +1014,7 @@ dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_subcomb.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -1033,7 +1033,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_subcomb.qmd >}}
 
 :::
 
@@ -1207,7 +1207,7 @@ dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_ccht.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -1226,7 +1226,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_ccht.qmd >}}
 
 :::
 
@@ -1374,7 +1374,7 @@ dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_cchtsub.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -1393,7 +1393,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_cchtsub.qmd >}}
 
 :::
 
@@ -1539,7 +1539,7 @@ dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_cchtsub.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -1558,7 +1558,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_cchtsub.qmd >}}
 
 :::
 
@@ -1725,11 +1725,16 @@ frac_pred_gen = pd.DataFrame(
   index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, scratch_pheno, legend_class_ncol=2)
+dendro_barplot(
+  frac_pred_gen, 
+  scratch_pheno, 
+  legend_class_ncol=2,
+  pheno_dat_col="no_lb"
+)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_scratch.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -1748,7 +1753,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_scratch.qmd >}}
 
 :::
 
@@ -1904,11 +1909,16 @@ frac_pred_gen = pd.DataFrame(
   index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, clin_uf_pheno, legend_class_ncol=2)
+dendro_barplot(
+  frac_pred_gen, 
+  clin_uf_pheno, 
+  legend_class_ncol=2,
+  pheno_dat_col="implantation"
+)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props.qmd"
+tmp_section_f = "_ev_corr_props_clin.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -1927,7 +1937,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props.qmd >}}
+{{< include _ev_corr_props_clin.qmd >}}
 
 :::
 
