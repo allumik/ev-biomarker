@@ -52,34 +52,6 @@ data_folder = getenv("DATA_FOLDER")
 raw_data_folder = getenv("RAW_DATA_FOLDER")
 
 
-## define a function for the data extraction
-def gene_x_sample_view(
-  sc_dat_obj, 
-  gene_list=["TBX15", "ERICH3", "SNTN", "WDR38", "CD33", "COL9A1", "IDHA1", "SPDEF", "CDKN2A"],
-  cols_of_interest={"index", "Age", "celltype_general", "celltype"}
-  ):
-  ## read in the genelist and select the genes in sc_dat_obj
-  sc_dat_obj = sc_dat_obj[:, sc_dat_obj.var.index.isin(gene_list)].to_memory()
-  ## and merge with the obs table and pivot the gene table
-  return (
-    sc_dat_obj.obs.join(
-      pd.DataFrame(
-        sc_dat_obj.X.toarray(),
-        index=sc_dat_obj.obs.index,
-        columns=sc_dat_obj.var.index
-      ),
-      how="left"
-    )
-    .reset_index()
-    .melt(
-      id_vars=cols_of_interest, 
-      value_vars=set(sc_dat_obj.var.index),
-      var_name="gene_id",
-      value_name="norm_expr"
-      )
-    .set_index("index")
-  )
-
 # some prelims for data standardisation
 replace_dict = {
   "Proliferative Early": "EP",
@@ -291,7 +263,7 @@ sns.displot(
 
 ```
 
-# UF and scRNA-seq cell type link
+# Biomarker expression through cyclephases in scRNA-seq
 
 Here we first subset the single-cell atlas per following criteria:
 
@@ -307,101 +279,148 @@ Following this, well look at all the different cycle phases that are also repres
 * LS or Late-Secretory as "post"/"Post-receptive"
 
 ```{python}
+## define a function for the data extraction
+def gene_x_sample_view(
+  sc_dat_obj, 
+  gene_list=["TBX15", "ERICH3", "SNTN", "WDR38", "CD33", "COL9A1", "IDHA1", "SPDEF", "CDKN2A"],
+  cols_of_interest={"index", "Age", "celltype_general", "celltype"}
+  ):
+  ## read in the genelist and select the genes in sc_dat_obj
+  sc_dat_obj = sc_dat_obj[:, sc_dat_obj.var.index.isin(gene_list)].to_memory()
+  ## and merge with the obs table and pivot the gene table
+  return (
+    sc_dat_obj.obs.join(
+      pd.DataFrame(
+        sc_dat_obj.X.toarray(),
+        index=sc_dat_obj.obs.index,
+        columns=sc_dat_obj.var.index
+      ),
+      how="left"
+    )
+    .reset_index()
+    .melt(
+      id_vars=cols_of_interest, 
+      value_vars=set(sc_dat_obj.var.index),
+      var_name="gene_id",
+      value_name="norm_expr"
+      )
+    .set_index("index")
+  )
 
-## create a samples-level view of the obs
-filt1 = ["Whole_Uterus"]
-filt2 = ["dHormones", "eHormones", "sHormones"]
-cycle_filt = ["EP", "ES", "MS", "LS"] # "LP"
-sc_obs_tmp = gene_x_sample_view(
-    sc_dat[
-      sc_dat.obs
-        .query("Biopsy_type not in @filt1 & cyclephase in @cycle_filt")
-        .index
-    ],
-    gene_list=clin_de_genes,
-    cols_of_interest={"index", "celltype_general", "celltype", "cyclephase"}
-  ).assign(
-    cyclephase=lambda x: 
-      x.cyclephase.astype("str").astype("category").cat.reorder_categories(cycle_filt, ordered=True)
+
+## create a plotting function for gene lists
+def plot_gene_list(
+  sc_dat, 
+  gene_list, 
+  wrap_rows=3,
+  cycle_filt=["EP", "ES", "MS", "LS"],
+  biopsy_type_filt=["Whole_Uterus"]
+  ):
+  sc_obs_tmp = gene_x_sample_view(
+      sc_dat[
+        sc_dat.obs
+          .query("Biopsy_type not in @biopsy_type_filt & cyclephase in @cycle_filt")
+          .index
+      ],
+      gene_list=gene_list,
+      cols_of_interest={"index", "celltype_general", "celltype", "cyclephase"}
+    ).assign(cyclephase=lambda x:
+        x.cyclephase.astype("str").astype("category").cat.reorder_categories(cycle_filt, ordered=True)
+    )
+
+  ## precalculate stat
+  return (
+    so.Plot(
+      (
+        sc_obs_tmp
+        .groupby(["gene_id", "cyclephase", "celltype_general"])
+        .agg({"norm_expr": ['mean', 'min', 'max', 'sem']})
+        .droplevel(0, axis=1)
+        .reset_index()
+        .assign(se_min=lambda x: x["mean"] - x["sem"], se_max=lambda x: x["mean"] + x["sem"])
+      ),
+      x="cyclephase",
+      y="mean",
+      ymin="se_min",
+      ymax="se_max",
+      color="celltype_general"
+    )
+    # .layout(size=(9,12))
+    .add(so.Line())
+    .add(so.Band(alpha=.2))
+    .facet(None, "gene_id", wrap=wrap_rows)
+    .share(y=False)
+    .theme(sns.axes_style("white") | sns.plotting_context("notebook"))
   )
 
 ```
+
+::: {.panel-tabset}
+
+## Implantation DE
 
 First lets look at the expression changes of **implantation or implantation failure DE genes** throughout the menstrual cycle for every major cell typ.
 
 ```{python}
-#| output: false
-
-## precalculate stat
-(
-  so.Plot(
-    (
-      sc_obs_tmp
-      .groupby(["gene_id", "cyclephase", "celltype_general"])
-      .agg({"norm_expr": ['mean', 'min', 'max', 'sem']})
-      .droplevel(0, axis=1)
-      .reset_index()
-      .assign(se_min=lambda x: x["mean"] - x["sem"], se_max=lambda x: x["mean"] + x["sem"])
-    ),
-    x="cyclephase",
-    y="mean",
-    ymin="se_min",
-    ymax="se_max",
-    color="celltype_general"
-  )
-  # .layout(size=(6,6))
-  .add(so.Line())
-  .add(so.Band(alpha=.2))
-  .facet(None, "gene_id", wrap=11)
-  .share(y=False)
-  .theme(sns.axes_style("white") | sns.plotting_context("notebook"))
-)
-
+plot_gene_list(sc_dat, clin_de_genes, wrap_rows=11)
 ```
 
-Then, lets look at the **UF+Bio geneset** profile in different cell types.
+## ESCRT-0
+
+Then, we have ESCRT-0 complex markers to investigate: HGS, STAM, STAM2
 
 ```{python}
-#| output: false
-
-sc_obs_tmp = gene_x_sample_view(
-    sc_dat[
-      sc_dat.obs
-        .query("Biopsy_type not in @filt1 & cyclephase in @cycle_filt")
-        .index
-    ],
-    gene_list=uf_bio_genes,
-    cols_of_interest={"index", "celltype_general", "celltype", "cyclephase"}
-  ).assign(cyclephase=lambda x:
-      x.cyclephase.astype("str").astype("category").cat.reorder_categories(cycle_filt, ordered=True)
-  )
-
-## precalculate stat
-(
-  so.Plot(
-    (
-      sc_obs_tmp
-      .groupby(["gene_id", "cyclephase", "celltype_general"])
-      .agg({"norm_expr": ['mean', 'min', 'max', 'sem']})
-      .droplevel(0, axis=1)
-      .reset_index()
-      .assign(se_min=lambda x: x["mean"] - x["sem"], se_max=lambda x: x["mean"] + x["sem"])
-    ),
-    x="cyclephase",
-    y="mean",
-    ymin="se_min",
-    ymax="se_max",
-    color="celltype_general"
-  )
-  .layout(size=(9,36))
-  .add(so.Line())
-  .add(so.Band(alpha=.2))
-  .facet(None, "gene_id", wrap=13)
-  .share(y=False)
-  .theme(sns.axes_style("white") | sns.plotting_context("notebook"))
-)
-
+gene_selection=["HGS", "STAM", "STAM2"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
 ```
+
+## ESCRT-I
+
+ESCRT-I complex markers: MVB12A,MVB12B,TSG101,UBAP1,VPS28,VPS37A,VPS37B,VPS37C,VPS37D
+
+```{python}
+gene_selection=["MVB12A", "MVB12B", "TSG101", "UBAP1", "VPS28", "VPS37A", "VPS37B", "VPS37C", "VPS37D"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+```
+
+## ESCRT-II
+
+ESCRT-II complex markers: SNF8,VPS25,VPS36
+
+```{python}
+gene_selection=["SNF8","VPS25","VPS36"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## ESCRT-III
+
+ESCRT-III complex markers: CHMP2A,CHMP2B,CHMP3,CHMP4A,CHMP4B,CHMP4C,CHMP6  
+
+```{python}
+gene_selection=["CHMP2A","CHMP2B","CHMP3","CHMP4A","CHMP4B","CHMP4C","CHMP6"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+```
+
+## ESCRT-IV
+
+ESCRT-III complex markers: VPS4A,VPS4B,VTA1  
+
+```{python}
+gene_selection=["VPS4A","VPS4B","VTA1"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## Tetraspanins
+
+Tetraspanins and other cargo markers:  CD9, CD63, CD81, ALIX, SDCBP  
+
+```{python}
+gene_selection=["CD9", "CD63", "CD81", "ALIX", "SDCBP"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+```
+
+:::
+
 
 # Single cell deconvolution and projection
 
@@ -1698,7 +1717,7 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 ```{python}
 
 dendro_barplot(
-  frac_pred, 
+  frac_pred,
   scratch_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
