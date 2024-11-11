@@ -50,6 +50,8 @@ atlas_folder = getenv("ATLAS_FOLDER")
 data_folder = getenv("DATA_FOLDER")
 st_folder = getenv("ST_FOLDER")
 model_folder = Path(data_folder).expanduser() / "saved_models"
+raw_data_folder = getenv("RAW_DATA_FOLDER")
+
 
 
 # some prelims for data standardisation
@@ -130,35 +132,50 @@ Load in the data, filter out "Hormones" celltypes and non-endometriotic samples 
 ```{python}
 #| output: false
 
-## Load the predictions and join with the large matrix
+## Load the main HECA dataset
 sc_dat = sc.read_h5ad(
-  Path(anndata_folder).expanduser() / "comb_heca.h5ad",
+  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_with_counts.h5ad",
   backed = "r"
-  )
+)
+
+sc_dat_immu = sc.read_h5ad(
+  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
+  backed = "r"
+)
 
 sc_dat.obs = (
   sc_dat.obs
   .assign(
     cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
-    celltype_general=lambda x: x.celltype.cat.remove_unused_categories()
+    celltype_general=lambda x: x.celltype.cat.remove_unused_categories(),
+    celltype=lambda x: 
+      x.celltype
+      .astype("object")
+      .mask(
+        x.index.isin(sc_dat_immu.obs.celltype.index), 
+        sc_dat_immu.obs.celltype.astype("object")
+      )
+      .astype("category")
   )
   .replace({ "celltype_general": gen_celltype_dict })
+  .assign(celltype_general=lambda x: 
+    pd.Categorical(x.celltype_general, categories = gen_celltype_order, ordered=True))
+  .rename(columns={"sample": "samplename"})
 )
 
-## exclude the HUTER data
 ## exclude some celltypes, such as she hormones cell types
 ## also exclude the endometriosis samples
-the_condition = "dataset != 'HUTER' & celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
+the_condition = "celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
 sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
+sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
 # check the minimum size of celltype matrix after filtering
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
 
-
 ## load in the EV CCHT only data
-ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "annot_raw.feather").set_index("gene_id")
-ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "phenotype.tsv").set_index("samplename")
+ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "filtered" / "annot_raw.feather").set_index("gene_id")
+ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "filtered" / "phenotype.tsv").set_index("samplename")
 
 ```
 
@@ -167,7 +184,7 @@ Load in the spatial slides experiments
 ```{python}
 #| output: false
 
-slides_path = Path(st_folder).expanduser() / "endo_counts_testset_man"
+slides_path = Path(st_folder).expanduser()
 vis_dats = {}
 for vis_fold in slides_path.glob("*/"):
   slide_id = vis_fold.stem
@@ -196,6 +213,11 @@ First we'll need to reformat the raw bulk RNA samples from EV to matrix form and
 
 ```{python}
 #| output: false
+
+## switch the expression matrix to raw counts if the matrix is preprocessed
+sc_dat.layers["scaled"] = sc_dat.X
+sc_dat.X = sc_dat.layers["counts"]
+del sc_dat.layers["counts"]
 
 model_params = {
   "celltype_key": "celltype",

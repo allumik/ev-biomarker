@@ -448,9 +448,45 @@ frac_params = {
   "batch_size": 512, 
   "epochs": 500, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
-  # "scaler": "ss", # seems to harmonise distributions better
+  "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
 }
+
+```
+
+```{python}
+
+def biplot_fractions(frac_obj, pheno, hue="cyclephase", palette="Set1", legend_title="Cycle Phase"):
+  ## don't scale as the counts are props anyways
+  pca = PCA(n_components=2)
+  pca_df = (
+    pd.DataFrame(data=pca.fit_transform(frac_obj), columns=["PC1", "PC2"])
+    .set_index(frac_obj.index)
+    .merge(pheno, left_index=True, right_index=True)
+  )
+  expl_var = pca.explained_variance_ratio_
+  loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+  # Visualize the PCA results
+  plt.figure(figsize=(8, 6))
+  sns.scatterplot(x='PC1', y='PC2', hue=hue, data=pca_df, palette=palette)
+
+  # Plot the loadings as a biplot
+  for i, feature in enumerate(frac_obj): 
+    plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
+    # write only signf loadings
+    if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
+      plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
+
+  plt.title('PCA Result')
+  plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
+  plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
+  plt.legend(title=legend_title, loc="upper left", bbox_to_anchor=(1.05, 1))
+  plt.grid(False)
+  # Major grid only
+  plt.axhline(0, color="lightgray", linewidth=1)
+  plt.axvline(0, color="lightgray", linewidth=1)
+  plt.show()
 
 ```
 
@@ -680,7 +716,15 @@ dendro_barplot(
 
 ```
 
-Or by major cell types:
+Apply PCA on the proportions.
+
+```{python}
+
+biplot_fractions(frac_pred, comb_uf_pheno)
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -697,6 +741,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, comb_uf_pheno)
 """
 
 # generate a temporary file and write the logic there
@@ -722,43 +767,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_comb.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(comb_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', style="group", data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -847,7 +855,15 @@ dendro_barplot(
 
 ```
 
-Or by major cell types:
+Apply PCA on the proportions.
+
+```{python}
+
+biplot_fractions(frac_tmp, comb_uf_pheno)
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -864,10 +880,11 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, comb_uf_pheno)
 """
 
 # generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props_subcomb.qmd"
+tmp_section_f = "_ev_corr_props_combsub.qmd"
 with open(tmp_section_f, 'w') as section_f:
   for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
     the_lines = [
@@ -889,43 +906,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_subcomb.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index].index)
-  .merge(comb_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -1012,8 +992,15 @@ dendro_barplot(
 
 ```
 
+Apply PCA on the proportions.
 
-Or by major cell types:
+```{python}
+
+biplot_fractions(frac_tmp, comb_uf_pheno)
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -1030,6 +1017,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, comb_uf_pheno)
 """
 
 # generate a temporary file and write the logic there
@@ -1055,43 +1043,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_subcomb.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_tmp), columns=["PC1", "PC2"])
-  .set_index(frac_tmp.index)
-  .merge(comb_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -1205,8 +1156,15 @@ dendro_barplot(
 
 ```
 
+Apply PCA on the proportions.
 
-Or by major cell types:
+```{python}
+
+biplot_fractions(frac_pred, ccht_uf_pheno)
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -1223,6 +1181,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno)
 """
 
 # generate a temporary file and write the logic there
@@ -1248,43 +1207,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_ccht.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(ccht_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', style="group", data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -1363,7 +1285,7 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 ```{python}
 
 dendro_barplot(
-  frac_tmp, 
+  frac_tmp,
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
@@ -1373,7 +1295,15 @@ dendro_barplot(
 
 ```
 
-Or by major cell types:
+Apply PCA on the proportions.
+
+```{python}
+
+biplot_fractions(frac_tmp, ccht_uf_pheno)
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -1390,6 +1320,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno)
 """
 
 # generate a temporary file and write the logic there
@@ -1415,43 +1346,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_cchtsub.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_tmp), columns=["PC1", "PC2"])
-  .set_index(frac_tmp.index)
-  .merge(ccht_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -1538,7 +1432,15 @@ dendro_barplot(
 
 ```
 
-Or by major cell types:
+Apply PCA on the proportions.
+
+```{python}
+
+biplot_fractions(frac_tmp, ccht_uf_pheno)
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -1555,6 +1457,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno)
 """
 
 # generate a temporary file and write the logic there
@@ -1580,43 +1483,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_cchtsub.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_tmp), columns=["PC1", "PC2"])
-  .set_index(frac_tmp.index)
-  .merge(ccht_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -1728,7 +1594,15 @@ dendro_barplot(
 
 ```
 
-Or by major cell types:
+Apply PCA on the proportions.
+
+```{python}
+
+biplot_fractions(frac_pred, scratch_pheno, hue="status_rif", palette="flare", legend_title="RIF stage")
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -1745,11 +1619,13 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(
-  frac_pred_gen, 
-  scratch_pheno, 
+  frac_pred_gen,
+  scratch_pheno,
   legend_class_ncol=2,
   pheno_dat_col="no_lb"
 )
+
+biplot_fractions(frac_pred_gen, scratch_pheno, hue="status_rif", palette="flare", legend_title="RIF stage")
 """
 
 # generate a temporary file and write the logic there
@@ -1775,43 +1651,6 @@ with open(tmp_section_f, 'w') as section_f:
 {{< include _ev_corr_props_scratch.qmd >}}
 
 :::
-
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(scratch_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='status_rif', style="no_lb", data=pca_df, palette='flare')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Implantation', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
 
 Perform t-test for the pairwise differences of RIF and CTRL samples for each cell type.
 
@@ -1912,7 +1751,15 @@ dendro_barplot(
 
 ```
 
-Or by major cell types:
+Apply PCA on the proportions.
+
+```{python}
+
+biplot_fractions(frac_pred, clin_uf_pheno, hue="implantation", legend_title="Implantation")
+
+```
+
+Or **by major cell types**:
 
 ::: {.panel-tabset}
 
@@ -1934,6 +1781,8 @@ dendro_barplot(
   legend_class_ncol=2,
   pheno_dat_col="implantation"
 )
+
+biplot_fractions(frac_pred_gen, clin_uf_pheno, hue="implantation", legend_title="Implantation")
 """
 
 # generate a temporary file and write the logic there
@@ -1960,43 +1809,6 @@ with open(tmp_section_f, 'w') as section_f:
 
 :::
 
-Apply PCA on the proportions.
-
-```{python}
-
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(clin_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='implantation', style="n_transfer_embryo", data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Implantation', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
-
-```
-
 Perform t-test for the pairwise differences of RIF and CTRL samples for each cell type.
 
 * How strong is the trend of changing values throughout the cycle phases? -> rank correlation throughout the cycle phases in temporal order.
@@ -2005,7 +1817,7 @@ Perform t-test for the pairwise differences of RIF and CTRL samples for each cel
 
 # frac_long = convert_to_long(frac_pred, clin_uf_pheno)
 
-# write the t-testing function
+# # write the t-testing function
 # ttest_table = pd.DataFrame({
 #   celltype: {
 #     "z_stat": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).statistic,
