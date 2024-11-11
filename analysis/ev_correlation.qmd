@@ -448,7 +448,7 @@ frac_params = {
   "batch_size": 512, 
   "epochs": 500, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
-  "scaler": "ss", # seems to harmonise distributions better
+  # "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
 }
 
