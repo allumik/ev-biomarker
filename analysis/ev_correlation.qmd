@@ -456,42 +456,6 @@ frac_params = {
 
 ```{python}
 
-def biplot_fractions(frac_obj, pheno, hue="cyclephase", palette="Set1", legend_title="Cycle Phase"):
-  ## don't scale as the counts are props anyways
-  pca = PCA(n_components=2)
-  pca_df = (
-    pd.DataFrame(data=pca.fit_transform(frac_obj), columns=["PC1", "PC2"])
-    .set_index(frac_obj.index)
-    .merge(pheno, left_index=True, right_index=True)
-  )
-  expl_var = pca.explained_variance_ratio_
-  loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-  # Visualize the PCA results
-  plt.figure(figsize=(8, 6))
-  sns.scatterplot(x='PC1', y='PC2', hue=hue, data=pca_df, palette=palette)
-
-  # Plot the loadings as a biplot
-  for i, feature in enumerate(frac_obj): 
-    plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-    # write only signf loadings
-    if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-      plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-  plt.title('PCA Result')
-  plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-  plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-  plt.legend(title=legend_title, loc="upper left", bbox_to_anchor=(1.05, 1))
-  plt.grid(False)
-  # Major grid only
-  plt.axhline(0, color="lightgray", linewidth=1)
-  plt.axvline(0, color="lightgray", linewidth=1)
-  plt.show()
-
-```
-
-```{python}
-
 # the plotting function for the dendrogram on barplot
 def dendro_barplot(
   fractions,
@@ -583,6 +547,42 @@ def dendro_barplot(
 
 ```{python}
 
+def biplot_fractions(frac_obj, pheno, legend_title="Cycle Phase", kwargs={}):
+  ## don't scale as the counts are props anyways
+  pca = PCA(n_components=2)
+  pca_df = (
+    pd.DataFrame(data=pca.fit_transform(frac_obj), columns=["PC1", "PC2"])
+    .set_index(frac_obj.index)
+    .merge(pheno, left_index=True, right_index=True)
+  )
+  expl_var = pca.explained_variance_ratio_
+  loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+  # Visualize the PCA results
+  plt.figure(figsize=(8, 6))
+  sns.scatterplot(x='PC1', y='PC2', data=pca_df, **kwargs)
+
+  # Plot the loadings as a biplot
+  for i, feature in enumerate(frac_obj): 
+    plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
+    # write only signf loadings
+    if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
+      plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
+
+  plt.title('PCA Result')
+  plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
+  plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
+  plt.legend(title=legend_title, loc="upper left", bbox_to_anchor=(1.05, 1))
+  plt.grid(False)
+  # Major grid only
+  plt.axhline(0, color="lightgray", linewidth=1)
+  plt.axvline(0, color="lightgray", linewidth=1)
+  plt.show()
+
+```
+
+```{python}
+
 def convert_to_long(fracs, pheno) -> pd.DataFrame:
   # convert to long format
   return (
@@ -667,40 +667,6 @@ general_cells = (
 
 ```
 
-The deconvolution results of both biopsy and UF samples as an interactive heatmap:
-
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  comb_uf_pheno.group.unique(),
-  sns.color_palette("Set2", comb_uf_pheno.group.unique().size).as_hex()
-  ))
-
-row_colors = comb_uf_pheno.reindex(frac_pred.index.values).group.astype("object").map(lut)
-
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
 As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
@@ -720,7 +686,7 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_pred, comb_uf_pheno)
+biplot_fractions(frac_pred, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
 
 ```
 
@@ -741,7 +707,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, comb_uf_pheno)
+biplot_fractions(frac_pred_gen, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
 """
 
 # generate a temporary file and write the logic there
@@ -802,45 +768,14 @@ res_join.to_excel(fractions_folder / "comb_bio.xlsx", sheet_name="combined_bio")
 
 ## Only EV of Combined dataset
 
-The deconvolution results of both biopsy and UF samples as an heatmap:
+As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
+
 # subset only uf samples
 frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
 
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  comb_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", comb_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = comb_uf_pheno.reindex(
-  comb_uf_pheno.query("group == 'UF'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
 ```
-
-As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
 
@@ -859,7 +794,7 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_tmp, comb_uf_pheno)
+biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
 
 ```
 
@@ -880,7 +815,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, comb_uf_pheno)
+biplot_fractions(frac_pred_gen, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
 """
 
 # generate a temporary file and write the logic there
@@ -903,7 +838,7 @@ with open(tmp_section_f, 'w') as section_f:
 
 ```
 
-{{< include _ev_corr_props_subcomb.qmd >}}
+{{< include _ev_corr_props_combsub.qmd >}}
 
 :::
 
@@ -944,6 +879,10 @@ The deconvolution results of both biopsy and UF samples as an heatmap:
 ```{python}
 # subset only uf samples
 frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
+
+```
+
+```{python}
 
 # create a colormap
 lut = dict(zip(
@@ -996,7 +935,7 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_tmp, comb_uf_pheno)
+biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
 
 ```
 
@@ -1004,43 +943,7 @@ Or **by major cell types**:
 
 ::: {.panel-tabset}
 
-```{python}
-
-the_code_block = """
-focus_celltypes = general_cells.query("celltype_general == @general_ct").index
-
-frac_pred_gen = pd.DataFrame(
-  # frac_tmp.filter(focus_celltypes, axis=1),
-  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
-  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
-  index=frac_tmp.index
-)
-
-dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, comb_uf_pheno)
-"""
-
-# generate a temporary file and write the logic there
-tmp_section_f = "_ev_corr_props_subcomb.qmd"
-with open(tmp_section_f, 'w') as section_f:
-  for general_ct in set(gen_celltype_order) & set(general_cells.celltype_general):
-    the_lines = [
-      # header
-      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
-      # some description text
-      "The proportions of the cell types within the general celltypes.\n\n",
-      # start of block
-      "```{python}\n",
-      f"general_ct = '{general_ct}'\n",
-      the_code_block,
-      # end of block
-      "```\n\n"
-      ]
-    section_f.writelines(the_lines)
-
-```
-
-{{< include _ev_corr_props_subcomb.qmd >}}
+{{< include _ev_corr_props_combsub.qmd >}}
 
 :::
 
@@ -1103,44 +1006,6 @@ general_cells = (
 
 ```
 
-The deconvolution results of both biopsy and UF samples as an heatmap:
-
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  ccht_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = ccht_uf_pheno.reindex(
-  ccht_uf_pheno.query("group == 'UF'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-# subset only uf samples
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
-
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
@@ -1160,7 +1025,7 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_pred, ccht_uf_pheno)
+biplot_fractions(frac_pred, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
 
 ```
 
@@ -1181,7 +1046,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, ccht_uf_pheno)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
 """
 
 # generate a temporary file and write the logic there
@@ -1244,43 +1109,14 @@ res_join.to_excel(fractions_folder / "ccht_bio.xlsx", sheet_name="ccht_bio")
 
 This dataset has only CCHT samples of EV variety, this means without batch correction applied.
 
+As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
+
 ```{python}
+
 # subset only uf samples
 frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
 
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  ccht_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = ccht_uf_pheno.reindex(
-  ccht_uf_pheno.query("group == 'UF'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1200,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
 ```
-
-As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
 
@@ -1299,7 +1135,7 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_tmp, ccht_uf_pheno)
+biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
 
 ```
 
@@ -1320,7 +1156,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, ccht_uf_pheno)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
 """
 
 # generate a temporary file and write the logic there
@@ -1382,38 +1218,9 @@ res_join.to_excel(fractions_folder / "ccht_uf.xlsx", sheet_name="ccht_uf")
 This dataset has only CCHT samples of biopsies, this means without batch correction applied.
 
 ```{python}
+
 # subset only uf samples
 frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
-
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  ccht_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = ccht_uf_pheno.reindex(
-  ccht_uf_pheno.query("group == 'biopsy'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1200,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
 
 ```
 
@@ -1436,7 +1243,7 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_tmp, ccht_uf_pheno)
+biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
 
 ```
 
@@ -1457,7 +1264,7 @@ frac_pred_gen = pd.DataFrame(
 )
 
 dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, ccht_uf_pheno)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
 """
 
 # generate a temporary file and write the logic there
@@ -1543,41 +1350,6 @@ scratch_pred = frac_pred.copy()
 
 ```
 
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  scratch_pheno.no_lb.unique(),
-  sns.color_palette("Set2", scratch_pheno.no_lb.unique().size).as_hex()
-  ))
-
-row_colors = scratch_pheno.reindex(
-  scratch_pheno.index.values
-  ).no_lb.astype("object").map(lut)
-
-# subset only uf samples
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
@@ -1598,7 +1370,11 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_pred, scratch_pheno, hue="status_rif", palette="flare", legend_title="RIF stage")
+biplot_fractions(
+  frac_pred, scratch_pheno,
+  legend_title="RIF stage",
+  kwargs={"hue":"status_rif", "palette":"flare", "style":"no_lb"}
+  )
 
 ```
 
@@ -1625,7 +1401,11 @@ dendro_barplot(
   pheno_dat_col="no_lb"
 )
 
-biplot_fractions(frac_pred_gen, scratch_pheno, hue="status_rif", palette="flare", legend_title="RIF stage")
+biplot_fractions(
+  frac_pred_gen, scratch_pheno,
+  legend_title="RIF stage",
+  kwargs={"hue":"status_rif", "palette":"flare", "style":"no_lb"}
+)
 """
 
 # generate a temporary file and write the logic there
@@ -1700,41 +1480,6 @@ general_cells = (
 
 ```
 
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  general_cells.celltype_general.unique(),
-  sns.color_palette("Set2", general_cells.celltype_general.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.celltype_general.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  clin_uf_pheno.implantation.unique(),
-  sns.color_palette("Set2", clin_uf_pheno.implantation.unique().size).as_hex()
-  ))
-
-row_colors = clin_uf_pheno.reindex(
-  clin_uf_pheno.index.values
-  ).implantation.astype("object").map(lut)
-
-# subset only uf samples
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
@@ -1755,7 +1500,11 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(frac_pred, clin_uf_pheno, hue="implantation", legend_title="Implantation")
+biplot_fractions(
+  frac_pred, clin_uf_pheno, 
+  legend_title="Implantation", 
+  kwargs={"hue":"implantation", "palette":"Set1"} 
+)
 
 ```
 
@@ -1782,7 +1531,11 @@ dendro_barplot(
   pheno_dat_col="implantation"
 )
 
-biplot_fractions(frac_pred_gen, clin_uf_pheno, hue="implantation", legend_title="Implantation")
+biplot_fractions(
+  frac_pred, clin_uf_pheno, 
+  legend_title="Implantation", 
+  kwargs={"hue":"implantation", "palette":"Set1"} 
+)
 """
 
 # generate a temporary file and write the logic there
