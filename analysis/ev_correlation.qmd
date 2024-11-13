@@ -43,6 +43,9 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 from sklearn.preprocessing import normalize
 
+## Do you want to rerun all the models?
+rerun_all = True
+
 ## load the environment variables from the .env file
 load_dotenv()
 
@@ -446,7 +449,7 @@ model_params = {
 
 frac_params = {
   "batch_size": 512, 
-  "epochs": 500, # looking at loss plot then 500 seems to be already enough
+  "epochs": 5000, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
   "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
@@ -646,7 +649,7 @@ def cor_table(fracs_long) -> pd.DataFrame:
 
 fractions_folder = Path(data_folder) / "tape_fractions"
 fractions_file = fractions_folder / "comb_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -985,7 +988,7 @@ This dataset has only CCHT samples without batch correction. These also include 
 ```{python}
 
 fractions_file = fractions_folder / "ccht_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -1326,7 +1329,7 @@ res_join.to_excel(fractions_folder / "ccht_bio.xlsx", sheet_name="ccht_bio")
 ```{python}
 
 fractions_file = fractions_folder / "scratch_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -1459,7 +1462,7 @@ ttest_table.to_excel(fractions_folder / "scratch_test.xlsx", sheet_name="scratch
 ```{python}
 
 fractions_file = fractions_folder / "clin_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(

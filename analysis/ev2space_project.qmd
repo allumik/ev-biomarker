@@ -42,6 +42,9 @@ from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 
+## Do you want to rerun all the models?
+rerun_all = True
+
 ## load the environment variables from the .env file
 load_dotenv()
 
@@ -123,8 +126,6 @@ gen_celltype_dict = {
   "Immune_Myeloid": gen_celltype_order[5]
 }
 
-
-
 ```
 
 Load in the data, filter out "Hormones" celltypes and non-endometriotic samples and finally do some preprocessing:
@@ -196,6 +197,8 @@ for vis_fold in slides_path.glob("*/"):
 
   vis_dat = vis_dat[:, vis_dat.var['total_counts'] > 100]
   vis_dat = ov.pp.preprocess(vis_dat, mode='shiftlog|pearson', n_HVGs=3000, target_sum=1e4)
+  ## new recommended preproc - does not work
+  # vis_dat = ov.space.svg(vis_dat, mode="prost", n_svgs=3000, target_sum=1e4, platform="visium")
   vis_dat.raw = vis_dat
   vis_dat = vis_dat[:, vis_dat.var.highly_variable_features]
   vis_dats[slide_id] = vis_dat
@@ -229,7 +232,7 @@ model_params = {
 
 frac_params = {
   "batch_size": 512,
-  "epochs": 500, # looking at loss plot then 500 seems to be already enough
+  "epochs": 500, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
   "scaler": "ss", # seems to harmonise distributions better
   "method": "tape",
   "mode": "high-resolution"
@@ -238,28 +241,32 @@ frac_params = {
 vae_params = {
   "batch_size": 512,
   "hidden_size": 256,
-  "epoch_num": 500 # looking at loss plot then 500 seems to be already enough
+  "epoch_num": 5000 # looking at loss plot then 500 seems to be already enough
 }
 
 ```
 
-Train the model on the single cell reference data and generate the pseudo-single-cell data from the bulk samples.
+Train the model on the single cell reference data and generate the pseudo-single-cell data from the bulk samples. Here we divide the original dataset into "biopsy" and "EV" groups, which then summarises all of the corresponding sampling method samples into one representative group. This would also increase the confidence of cell profiles while normalising individual variance.
+
+::: {.panel-tabset}
+
+## EV group
 
 ```{python}
 
 gen_sc_file = Path(anndata_folder).expanduser() / "gen_sc_ev.h5ad"
-if gen_sc_file.exists():
+if gen_sc_file.exists() and not rerun_all:
   gen_ccht_ev = sc.read_h5ad(gen_sc_file, backed="r").to_memory()
 else:
   model_obj = ov.bulk2single.Bulk2Single(
-    bulk_data=ccht_uf_raw,
+    bulk_data=ccht_uf_raw[ccht_uf_pheno.query("group=='UF'").index],
     single_data=sc_dat.to_memory(),
     **model_params
   )
-  _ = model_obj.predicted_fraction(**frac_params) # you have to run this to set the model_obj.cell_target_sum
+  # you have to run this to set the model_obj.cell_target_sum  
+  # and not run the single_preprocess_lazy() as it seems to override cell_num attribute and does needless normalisation
+  _ = model_obj.predicted_fraction(**frac_params)
   model_obj.bulk_preprocess_lazy()
-  model_obj.single_preprocess_lazy()
-  model_obj.prepare_input()
   model_obj.train(
     vae_save_dir=Path(model_folder).expanduser() / "pseudosc_model",
     vae_save_name="pseudosc_ev",
@@ -268,12 +275,16 @@ else:
     **vae_params
     )
   gen_ccht_ev = model_obj.generate()
+  gen_ccht_ev.obs = gen_ccht_ev.obs.join(
+    sc_dat.obs[["celltype", "celltype_general"]].drop_duplicates().set_index("celltype"), 
+    on="celltype"
+    )
   gen_ccht_ev.write(gen_sc_file)
   del model_obj
 
 ```
 
-The generated dataset preprocessed, scaled, embedded into lower dimensions and clustered.
+The generated dataset is then preprocessed, scaled, embedded into lower dimensions and clustered via Leiden.
 
 ```{python}
 
@@ -307,33 +318,124 @@ ov.pl.embedding(
 
 ```
 
+## Biopsy group
+
+```{python}
+
+gen_sc_file = Path(anndata_folder).expanduser() / "gen_sc_biopsy.h5ad"
+if gen_sc_file.exists() and not rerun_all:
+  gen_ccht_bio = sc.read_h5ad(gen_sc_file, backed="r").to_memory()
+else:
+  model_obj = ov.bulk2single.Bulk2Single(
+    bulk_data=ccht_uf_raw[ccht_uf_pheno.query("group=='biopsy'").index],
+    single_data=sc_dat.to_memory(),
+    **model_params
+  )
+  _ = model_obj.predicted_fraction(**frac_params) # you have to run this to set the model_obj.cell_target_sum
+  model_obj.bulk_preprocess_lazy()
+  model_obj.train(
+    vae_save_dir=Path(model_folder).expanduser() / "pseudosc_model",
+    vae_save_name="pseudosc_bio",
+    generate_save_dir=Path(model_folder).expanduser() / "pseudosc_gen",
+    generate_save_name="pseudosc_bio_gen",
+    **vae_params
+    )
+  gen_ccht_bio = model_obj.generate()
+  gen_ccht_bio.obs = gen_ccht_bio.obs.join(
+    sc_dat.obs[["celltype", "celltype_general"]].drop_duplicates().set_index("celltype"), 
+    on="celltype"
+    )
+  gen_ccht_bio.write(gen_sc_file)
+  del model_obj
+
+```
+
+The generated dataset is then preprocessed, scaled, embedded into lower dimensions and clustered via Leiden.
+
+```{python}
+
+gen_ccht_bio = ov.pp.preprocess(gen_ccht_bio, mode="shiftlog|pearson", n_HVGs=2000)
+ov.pp.scale(gen_ccht_bio)
+ov.pp.pca(gen_ccht_bio, layer='scaled', n_pcs=50)
+
+gen_ccht_bio.obsm['X_pca']=gen_ccht_bio.obsm['scaled|original|X_pca']
+ov.pl.embedding(
+  gen_ccht_bio,
+  basis='X_pca',
+  color='celltype',
+  frameon='small'
+  )
+
+ov.pp.neighbors(
+  gen_ccht_bio, 
+  n_neighbors=15, 
+  n_pcs=50,
+  use_rep='scaled|original|X_pca'
+  )
+
+ov.pp.umap(gen_ccht_bio)
+
+ov.pl.embedding(
+  gen_ccht_bio,
+  basis='X_umap',
+  color='celltype',
+  frameon='small'
+  )
+
+```
+
+:::
+
+
 # Projection of generated counts to Spatial Transcriptomic slides
 
 And now use the generated pseudo-single-cell dataset and project it to the spatial transcriptomic slide.
 
+## Single2Spatial
+
+First, we are trying out the Single2Spatial VAE based spatial deconvolution method. This has the benefit of being able to generalise the profiles better, but at the price of using more GPU compute resource. This means that we will have to scale down the number of cells included in the projection, and therefore would significantly affect the accuracy of the deconvolution.
+
+```{python}
+#| output: false
+
+model_params = {
+  "celltype_key": "celltype",
+  "top_marker_num": 500,
+  "gpu": -1 # the default parameter is too large for the GPU
+}
+
+vae_params = {
+  "batch_size": 512,
+  "hidden_size": 256,
+  "spot_num": 500,
+  "cell_num": 100,
+  "num_epochs":1000,
+  "k": 10
+}
+
+```
+
+
+::: {.panel-tabset}
+
+### EV group
+
 ```{python}
 
 gen_st_file = Path(anndata_folder).expanduser() / "gen_st_ev.h5ad"
-if gen_st_file.exists():
+if gen_st_file.exists() and not rerun_all:
   vis_dat_proj = sc.read_h5ad(gen_st_file, backed="r").to_memory()
 else:
   # clean up on the model object and train the single2spatial model
   model_obj = ov.bulk2single.Single2Spatial(
     single_data=gen_ccht_ev.to_memory(),
     spatial_data=vis_dats["E184-1_bottom"].to_memory(),
-    celltype_key="celltype",
-    spot_key=["array_col", "array_row"],
-    top_marker_num=500, # the default parameter is too large for the GPU
-    gpu=-1
+    **model_params
   )
   model_obj.train(
-    spot_num=500,
-    cell_num=10,
-    batch_size=1000,
-    num_epochs=1000,
-    k=10,
     df_save_dir=Path(model_folder).expanduser() / "pseudosc_st_model",
-    df_save_name="pseudosc_st_ev"
+    df_save_name="pseudosc_st_ev",
+    **vae_params
   )
   vis_dat_proj = model_obj.spot_assess()
   vis_dat_proj.write(gen_st_file)
@@ -354,22 +456,116 @@ The dataset visualised
 
 ```{python}
 
-# TODO
+# TODO multiclass colors for each major cell type group
+ct_group = gen_ccht_ev.obs.celltype_general.unique()
+for ct_g in ct_group:
+  cts = gen_ccht_ev.obs.query("celltype_general==@ct_g").celltype.unique()
+  sc.pl.spatial(
+    vis_dat_proj,
+    title=ct_g,
+    cmap='magma',
+    color=cts,
+    ncols=3, size=1.3,
+    img_key='hires',
+    # limit color scale at 99% quantile of cell abundance
+    vmin=0, vmax='p95'
+  )
 
-sc.pl.embedding(
-  vis_dat_proj,
-  basis="X_spatial",
-  color=["cell_type_max"],
-  frameon=False,
-  ncols=4,
-  show=False
+```
+
+### Biopsy group
+
+```{python}
+
+gen_st_file = Path(anndata_folder).expanduser() / "gen_st_bio.h5ad"
+if gen_st_file.exists() and not rerun_all:
+  vis_dat_proj = sc.read_h5ad(gen_st_file, backed="r").to_memory()
+else:
+  # clean up on the model object and train the single2spatial model
+  model_obj = ov.bulk2single.Single2Spatial(
+    single_data=gen_ccht_bio.to_memory(),
+    spatial_data=vis_dats["E184-1_bottom"].to_memory(),
+    **model_params
+  )
+  model_obj.train(
+    df_save_dir=Path(model_folder).expanduser() / "pseudosc_st_model",
+    df_save_name="pseudosc_st_bio",
+    **vae_params
+  )
+  vis_dat_proj = model_obj.spot_assess()
+  vis_dat_proj.write(gen_st_file)
+  del model_obj
+
+# reformat the obs layer to have intensities per maximum cell type predicted
+vis_dat_proj.obs = (
+  vis_dat_proj.obs
+  .assign(
+    cell_type_max = lambda x:
+      x.filter(items=gen_ccht_bio.obs.celltype.unique()).max().idxmax()
+  )
 )
 
+```
+
+The dataset visualised
+
+```{python}
+
+# TODO multiclass colors for each major cell type group
+ct_group = "Stromal"
+cts = gen_ccht_bio.obs.query("celltype_general==@ct_group").celltype.unique()
 sc.pl.spatial(
   vis_dat_proj,
-  # cmap='magma',
-  # show first 8 cell types
-  color=gen_ccht_ev.obs.celltype.unique(),
+  cmap='magma',
+  color=cts,
+  ncols=3, size=1.3,
+  img_key='hires',
+  # limit color scale at 99% quantile of cell abundance
+  vmin=0, vmax='p95',
+  spot_size=1
+)
+
+```
+
+::: 
+
+## Tangram + cell2location
+
+Next, we try out the classical spatial deconvolution method `Tangram` to integrate the Visium slide and the generated scRNA-seq dataset. Then, we apply `cell2location` to perform spatial deconvoluion. The benefit of this approach is that it is less computationally heavy and we are not anymore limited by GPU VRAM, while being still performing on par with previous methods.
+
+::: {.panel-tabset}
+
+## EV group
+
+```{python}
+
+gen_st_file = Path(anndata_folder).expanduser() / "c2l_st_ev.h5ad"
+if gen_st_file.exists() and not rerun_all:
+  vis_dat_proj = sc.read_h5ad(gen_st_file, backed="r").to_memory()
+else:
+  model_obj = ov.space.Tangram(
+    gen_ccht_ev.to_memory(),
+    vis_dats["E184-1_bottom"].to_memory(),
+    clusters="celltype"
+  )
+  model_obj.train(mode="cells", num_epochs=500, device="cuda:0")
+  vis_dat_proj = model_obj.cell2location()
+  vis_dat_proj.write(gen_st_file)
+  del model_obj
+
+```
+
+Visualise the results
+
+```{python}
+
+# TODO multiclass colors for each major cell type group
+ct_group = "Stromal"
+cts = gen_ccht_ev.obs.query("celltype_general==@ct_group").celltype.unique()
+sc.pl.spatial(
+  vis_dat_proj,
+  cmap='magma',
+  color=cts,
   ncols=3, size=1.3,
   img_key='hires',
   # limit color scale at 99% quantile of cell abundance
@@ -377,3 +573,45 @@ sc.pl.spatial(
 )
 
 ```
+
+## Biopsy group
+
+```{python}
+
+gen_st_file = Path(anndata_folder).expanduser() / "c2l_st_bio.h5ad"
+if gen_st_file.exists() and not rerun_all:
+  vis_dat_proj = sc.read_h5ad(gen_st_file, backed="r").to_memory()
+else:
+  model_obj = ov.space.Tangram(
+    gen_ccht_bio.to_memory(),
+    vis_dats["E184-1_bottom"].to_memory(),
+    clusters="celltype"
+  )
+  model_obj.train(mode="cells", num_epochs=500, device="cuda:0")
+  vis_dat_proj = model_obj.cell2location()
+  vis_dat_proj.write(gen_st_file)
+  del model_obj
+
+```
+
+Visualise the results
+
+```{python}
+
+# TODO multiclass colors for each major cell type group
+ct_group = "Stromal"
+ct_group = gen_ccht_bio.obs.celltype_general.unique()[1]
+cts = gen_ccht_bio.obs.query("celltype_general==@ct_group").celltype.unique()
+sc.pl.spatial(
+  vis_dat_proj,
+  cmap='magma',
+  color=cts,
+  ncols=3, size=1.3,
+  img_key='hires',
+  # limit color scale at 99% quantile of cell abundance
+  vmin=0, vmax='p95'
+)
+
+```
+
+:::
