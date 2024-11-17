@@ -442,14 +442,14 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 500,
-  "max_single_cells": 5000,
+  "max_single_cells": 1500,
   "ratio_num": 1,
   "gpu": 0
 }
 
 frac_params = {
   "batch_size": 512, 
-  "epochs": 5000, # looking at loss plot then 500 seems to be already enough
+  "epochs": 1500, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
   "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
@@ -1535,7 +1535,7 @@ dendro_barplot(
 )
 
 biplot_fractions(
-  frac_pred, clin_uf_pheno, 
+  frac_pred_gen, clin_uf_pheno, 
   legend_title="Implantation", 
   kwargs={"hue":"implantation", "palette":"Set1"} 
 )

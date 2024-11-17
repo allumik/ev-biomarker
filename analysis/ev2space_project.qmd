@@ -232,7 +232,7 @@ model_params = {
 
 frac_params = {
   "batch_size": 512,
-  "epochs": 500, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
+  "epochs": 5, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
   "scaler": "ss", # seems to harmonise distributions better
   "method": "tape",
   "mode": "high-resolution"
@@ -241,7 +241,7 @@ frac_params = {
 vae_params = {
   "batch_size": 512,
   "hidden_size": 256,
-  "epoch_num": 5000 # looking at loss plot then 500 seems to be already enough
+  "epoch_num": 10 # looking at loss plot then 500 seems to be already enough
 }
 
 ```
