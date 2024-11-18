@@ -56,7 +56,6 @@ model_folder = Path(data_folder).expanduser() / "saved_models"
 raw_data_folder = getenv("RAW_DATA_FOLDER")
 
 
-
 # some prelims for data standardisation
 replace_dict = {
   "Proliferative Early": "EP",
@@ -68,62 +67,6 @@ replace_dict = {
   # "Secretory": "Secretory Mid",
   "Mid-Secretory": "MS",
   "Proliferative Disordered": "EP"
-}
-
-## the order that the variable shoudl be in 
-gen_celltype_order = [
-  "Ciliated Epithelium",
-  "Epithelium",
-  "Stromal",
-  "Mesenchymal",
-  "Vascular",
-  "Immune",
-  "Other",
-  "Unknown"
-]
-
-## the celltype generalisation
-gen_celltype_dict = {
-  "Ciliated": gen_celltype_order[0],
-  "preCiliated": gen_celltype_order[0],
-  "SOX9_basalis": gen_celltype_order[1],
-  "SOX9_functionalis_I": gen_celltype_order[1],
-  "SOX9_functionalis_II": gen_celltype_order[1],
-  "SOX9_luminal": gen_celltype_order[1],
-  "Cycling": gen_celltype_order[1],
-  "preGlandular": gen_celltype_order[1],
-  "Glandular": gen_celltype_order[1],
-  "Glandular_secretory": gen_celltype_order[1],
-  "Glandular_secretory_FGF7": gen_celltype_order[1],
-  "Luminal": gen_celltype_order[1],
-  "preLuminal": gen_celltype_order[1],
-  "MUC5B": gen_celltype_order[1],
-  "KRT5": gen_celltype_order[1],
-  "eStromal": gen_celltype_order[2],
-  "eStromal_early": gen_celltype_order[2],
-  "eStromal_mid": gen_celltype_order[2],
-  "eStromal_late": gen_celltype_order[2],
-  "dStromal_early": gen_celltype_order[2],
-  "dStromal_mid": gen_celltype_order[2],
-  "dStromal_late": gen_celltype_order[2],
-  "dStromal": gen_celltype_order[2],
-  "eStromal_MMPs": gen_celltype_order[2],
-  "eStromal_cycling": gen_celltype_order[2],
-  "uSMCs": gen_celltype_order[3],
-  "mPV": gen_celltype_order[3],
-  "ePV_1a": gen_celltype_order[3],
-  "ePV_1b": gen_celltype_order[3],
-  "ePV_2": gen_celltype_order[3],
-  "Fibroblast_basalis": gen_celltype_order[3],
-  "HOXA13": gen_celltype_order[3],
-  "Arterial": gen_celltype_order[4],
-  "Venous": gen_celltype_order[4],
-  "Lymphatic": gen_celltype_order[4],
-  # "eHormones": gen_celltype_order[6],
-  # "sHormones": gen_celltype_order[6],
-  # "dHormones": gen_celltype_order[6],
-  "Immune_Lymphoid": gen_celltype_order[5],
-  "Immune_Myeloid": gen_celltype_order[5]
 }
 
 ```
@@ -144,11 +87,14 @@ sc_dat_immu = sc.read_h5ad(
   backed = "r"
 )
 
+# check for the immune cell barcodes in the 
+# np.unique(np.isin(sc_dat.obs.query("lineage == 'Immune'").index.to_numpy(), sc_dat_immu.obs.index.to_numpy()), return_counts=True)
+# np.unique(np.isin(sc_dat_immu.obs.index.to_numpy(), sc_dat.obs.query("lineage == 'Immune'").index.to_numpy()), return_counts=True)
+
 sc_dat.obs = (
   sc_dat.obs
   .assign(
     cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
-    celltype_general=lambda x: x.celltype.cat.remove_unused_categories(),
     celltype=lambda x: 
       x.celltype
       .astype("object")
@@ -156,11 +102,16 @@ sc_dat.obs = (
         x.index.isin(sc_dat_immu.obs.celltype.index), 
         sc_dat_immu.obs.celltype.astype("object")
       )
+      .astype("category"),
+    label_long=lambda x: 
+      x.label_long
+      .astype("object")
+      .mask(
+        x.index.isin(sc_dat_immu.obs.label_long.index), 
+        sc_dat_immu.obs.label_long.astype("object")
+      )
       .astype("category")
   )
-  .replace({ "celltype_general": gen_celltype_dict })
-  .assign(celltype_general=lambda x: 
-    pd.Categorical(x.celltype_general, categories = gen_celltype_order, ordered=True))
   .rename(columns={"sample": "samplename"})
 )
 
@@ -174,8 +125,8 @@ sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=30
 # check the minimum size of celltype matrix after filtering
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
 
-## load in the EV CCHT only data
-ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "filtered" / "annot_raw.feather").set_index("gene_id")
+## load in the EV CCHT only data and drop the "none" gene id in the end
+ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "filtered" / "annot_raw.feather").set_index("gene_id").iloc[:-1]
 ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "filtered" / "phenotype.tsv").set_index("samplename")
 
 ```
@@ -225,14 +176,14 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 500,
-  "max_single_cells": 5000,
+  "max_single_cells": 10000,
   "ratio_num": 1,
   "gpu": 0
 }
 
 frac_params = {
   "batch_size": 512,
-  "epochs": 5, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
+  "epochs": 2500, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
   "scaler": "ss", # seems to harmonise distributions better
   "method": "tape",
   "mode": "high-resolution"
@@ -241,7 +192,7 @@ frac_params = {
 vae_params = {
   "batch_size": 512,
   "hidden_size": 256,
-  "epoch_num": 10 # looking at loss plot then 500 seems to be already enough
+  "epoch_num": 2500 # looking at loss plot then 500 seems to be already enough
 }
 
 ```
@@ -276,7 +227,7 @@ else:
     )
   gen_ccht_ev = model_obj.generate()
   gen_ccht_ev.obs = gen_ccht_ev.obs.join(
-    sc_dat.obs[["celltype", "celltype_general"]].drop_duplicates().set_index("celltype"), 
+    sc_dat.obs[["celltype", "lineage"]].drop_duplicates().set_index("celltype"), 
     on="celltype"
     )
   gen_ccht_ev.write(gen_sc_file)
@@ -342,7 +293,7 @@ else:
     )
   gen_ccht_bio = model_obj.generate()
   gen_ccht_bio.obs = gen_ccht_bio.obs.join(
-    sc_dat.obs[["celltype", "celltype_general"]].drop_duplicates().set_index("celltype"), 
+    sc_dat.obs[["celltype", "lineage"]].drop_duplicates().set_index("celltype"), 
     on="celltype"
     )
   gen_ccht_bio.write(gen_sc_file)
@@ -457,9 +408,9 @@ The dataset visualised
 ```{python}
 
 # TODO multiclass colors for each major cell type group
-ct_group = gen_ccht_ev.obs.celltype_general.unique()
+ct_group = gen_ccht_ev.obs.lineage.unique()
 for ct_g in ct_group:
-  cts = gen_ccht_ev.obs.query("celltype_general==@ct_g").celltype.unique()
+  cts = gen_ccht_ev.obs.query("lineage==@ct_g").celltype.unique()
   sc.pl.spatial(
     vis_dat_proj,
     title=ct_g,
@@ -513,7 +464,7 @@ The dataset visualised
 
 # TODO multiclass colors for each major cell type group
 ct_group = "Stromal"
-cts = gen_ccht_bio.obs.query("celltype_general==@ct_group").celltype.unique()
+cts = gen_ccht_bio.obs.query("lineage==@ct_group").celltype.unique()
 sc.pl.spatial(
   vis_dat_proj,
   cmap='magma',
@@ -561,7 +512,7 @@ Visualise the results
 
 # TODO multiclass colors for each major cell type group
 ct_group = "Stromal"
-cts = gen_ccht_ev.obs.query("celltype_general==@ct_group").celltype.unique()
+cts = gen_ccht_ev.obs.query("lineage==@ct_group").celltype.unique()
 sc.pl.spatial(
   vis_dat_proj,
   cmap='magma',
@@ -600,8 +551,8 @@ Visualise the results
 
 # TODO multiclass colors for each major cell type group
 ct_group = "Stromal"
-ct_group = gen_ccht_bio.obs.celltype_general.unique()[1]
-cts = gen_ccht_bio.obs.query("celltype_general==@ct_group").celltype.unique()
+ct_group = gen_ccht_bio.obs.lineage.unique()[1]
+cts = gen_ccht_bio.obs.query("lineage==@ct_group").celltype.unique()
 sc.pl.spatial(
   vis_dat_proj,
   cmap='magma',

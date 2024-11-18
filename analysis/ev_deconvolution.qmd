@@ -1,5 +1,5 @@
 ---
-title: "Single cell perspective into Extracellular Vesicules on Immune cells"
+title: "Single cell perspective into Extracellular Vesicules"
 format:
   html:
     code-fold: true
@@ -18,7 +18,7 @@ Set up the environment and load the deps:
 
 import re
 import pandas as pd
-pd.set_option('display.max_columns', 500)
+pd.set_option('display.max_columns', 100)
 import scanpy as sc
 import omicverse as ov
 import anndata as an
@@ -41,6 +41,10 @@ from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
+from sklearn.preprocessing import normalize
+
+## Do you want to rerun all the models?
+rerun_all = True
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -48,6 +52,8 @@ load_dotenv()
 anndata_folder = getenv("ANNDATA_FOLDER")
 atlas_folder = getenv("ATLAS_FOLDER")
 data_folder = getenv("DATA_FOLDER")
+raw_data_folder = getenv("RAW_DATA_FOLDER")
+
 
 # some prelims for data standardisation
 replace_dict = {
@@ -64,32 +70,71 @@ replace_dict = {
 
 ```
 
-Load in the data, filter out "Hormones" celltypes and non-endometriotic samples and finally do some preprocessing:
+Preprocessing for the HECA dataset:
+
+1) Load in the data
+2) join the immune cell annotation with the main dataset celltype annotation (all immune cells are in the main dataset)
+3) filter out "Hormones" celltypes and endometriotic samples 
+4) do some preprocessing
 
 ```{python}
 #| output: false
 
+## Load the main HECA dataset
 sc_dat = sc.read_h5ad(
-  Path(anndata_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
+  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_with_counts.h5ad",
   backed = "r"
 )
 
-## reformat some things
+sc_dat_immu = sc.read_h5ad(
+  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
+  backed = "r"
+)
+
 sc_dat.obs = (
   sc_dat.obs
-  .assign(cyclephase=lambda x: x.Stage.replace(replace_dict))
+  .assign(
+    cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
+    celltype=lambda x: 
+      x.celltype
+      .astype("object")
+      .mask(
+        x.index.isin(sc_dat_immu.obs.celltype.index), 
+        sc_dat_immu.obs.celltype.astype("object")
+      )
+      .astype("category"),
+    label_long=lambda x: 
+      x.label_long
+      .astype("object")
+      .mask(
+        x.index.isin(sc_dat_immu.obs.label_long.index), 
+        sc_dat_immu.obs.label_long.astype("object")
+      )
+      .astype("category")
+  )
+  .rename(columns={"sample": "samplename"})
 )
+
+## exclude some celltypes, such as she hormones cell types
+## also exclude the endometriosis samples
+the_condition = "celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
+sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
 sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
 # check the minimum size of celltype matrix after filtering
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
 
+```
+
+Load in the bulk data from the EV and biopsy samples
+
+```{python}
 
 ## load in the EV data
-comb_uf_mat = pd.read_feather(Path(data_folder).expanduser() / "comb_uf_tpm.feather").set_index("gene_id")
-comb_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "comb_uf_pheno.tsv").set_index("samplename")
-comb_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "comb_uf.feather").set_index("gene_id")
+comb_uf_mat = pd.read_feather(Path(data_folder).expanduser() / "combined" / "comb_uf_tpm.feather").set_index("gene_id").iloc[:-1]
+comb_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "combined" / "comb_uf_pheno.tsv").set_index("samplename")
+comb_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "combined" / "comb_uf.feather").set_index("gene_id").iloc[:-1]
 ## and reformat and join the data into long data (for better visuals)
 comb_uf = (
   comb_uf_mat
@@ -100,14 +145,14 @@ comb_uf = (
     id_vars=comb_uf_pheno.columns.to_list(),
     var_name="gene_id",
     value_name="norm_expr"
-  )
+    )
 )
 
 clin_de_genes = pd.read_table(Path(data_folder).expanduser() / "clin_de_genes.tsv").locus.to_list()
-uf_bio_genes = pd.read_table(Path(data_folder).expanduser() / "uf_bio_genes.tsv").locus.to_list()
+uf_bio_genes = pd.read_table(Path(data_folder).expanduser() / "combined" / "uf_bio_genes.tsv").locus.to_list()
 
 ## load in the SCRATCH clinical bio data
-scratch_mat = pd.read_feather(Path(data_folder).expanduser() / "star_mat_pheno.feather").set_index("sample")
+scratch_mat = pd.read_feather(Path(raw_data_folder).expanduser() / "star_mat_pheno.feather").set_index("sample")
 cols_to_keep = ["HID", "ages", "Timing_LH", "status_rif", "no_lb"]
 scratch_pheno = scratch_mat[cols_to_keep]
 scratch_mat = (
@@ -115,18 +160,20 @@ scratch_mat = (
   .drop(columns=cols_to_keep)
   .transpose()
   .rename_axis("gene_id")
+  .infer_objects()
+  .iloc[:-1]
 )
 
 ## load in the EV CCHT only data
-ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "annot_raw.feather").set_index("gene_id")
-ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "phenotype.tsv").set_index("samplename")
+ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "orig" / "annot_raw.feather").set_index("gene_id").iloc[:-1]
+ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "orig" / "phenotype.tsv").set_index("samplename")
 
 ## load in clinical samples
-clin_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "clin_counts_raw.feather")
+clin_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "clin_counts_raw.feather").iloc[:-1]
 clin_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "phenotype_clin.tsv").set_index("samplename")
 clin_uf_pheno = clin_uf_pheno.query("samplename in @clin_uf_raw.columns")
 ## change the gene_id for the clinical samples
-annot = pd.read_csv(Path(data_folder).expanduser() / "annot_table.csv")
+annot = pd.read_csv(Path(raw_data_folder).expanduser() / "annot_table.csv")
 clin_uf_raw = (
   clin_uf_raw
   .merge(annot, left_on='gene_id', right_on='ensembl_gene_id')
@@ -149,14 +196,6 @@ sns.displot(sc_dat.obs, x="dataset", hue="Stage", multiple="stack").set_xticklab
 
 ```
 
-How are cell types divided throughout the menstrual cycle?
-
-```{python}
-
-sns.displot(sc_dat.obs, x="Stage", hue="celltype", multiple="stack").set_xticklabels(rotation=90)
-
-```
-
 Or just comparison between celltypes in different HECA datasets
 
 ```{python}
@@ -166,6 +205,176 @@ sns.move_legend(g, "center right", fancybox=True, ncol=2, bbox_to_anchor=(1.25,0
 
 ```
 
+How many different classes of biopsy types there are in the whole dataset?
+
+```{python}
+
+sns.displot(
+  sc_dat.obs[["samplename", "Biopsy_type"]].drop_duplicates(),
+  x="Biopsy_type"
+  ).set_xticklabels(rotation=90)
+
+```
+
+# Biomarker expression through cyclephases in scRNA-seq
+
+Here we first subset the single-cell atlas per following criteria:
+
+* We filter out samples with "Whole Uterus" biopsy type
+* Filter out celltypes marked as "dHormones", "eHormones" and "sHormones"
+
+Following this, well look at all the different cycle phases that are also represented in the UF dataset:
+
+* EP or Early-Proliferative as "pro"/"Proliferative"
+* LP or Late-Proliferative as "pro"/"Proliferative"
+* ES or Early-Secretory as "pre"/"Pre-receptive"
+* MS or Mid-Secretory as "rec"/"Receptive"
+* LS or Late-Secretory as "post"/"Post-receptive"
+
+```{python}
+## define a function for the data extraction
+def gene_x_sample_view(
+  sc_dat_obj, 
+  gene_list=["TBX15", "ERICH3", "SNTN", "WDR38", "CD33", "COL9A1", "IDHA1", "SPDEF", "CDKN2A"],
+  cols_of_interest={"index", "Age", "lineage", "celltype"}
+  ):
+  ## read in the genelist and select the genes in sc_dat_obj
+  sc_dat_obj = sc_dat_obj[:, sc_dat_obj.var.index.isin(gene_list)].to_memory()
+  ## and merge with the obs table and pivot the gene table
+  return (
+    sc_dat_obj.obs.join(
+      pd.DataFrame(
+        sc_dat_obj.X.toarray(),
+        index=sc_dat_obj.obs.index,
+        columns=sc_dat_obj.var.index
+      ),
+      how="left"
+    )
+    .reset_index()
+    .melt(
+      id_vars=cols_of_interest, 
+      value_vars=set(sc_dat_obj.var.index),
+      var_name="gene_id",
+      value_name="norm_expr"
+      )
+    .set_index("index")
+  )
+
+
+## create a plotting function for gene lists
+def plot_gene_list(
+  sc_dat, 
+  gene_list, 
+  wrap_rows=3,
+  cycle_filt=["EP", "ES", "MS", "LS"],
+  biopsy_type_filt=["Whole_Uterus"]
+  ):
+  sc_obs_tmp = gene_x_sample_view(
+      sc_dat[
+        sc_dat.obs
+          .query("Biopsy_type not in @biopsy_type_filt & cyclephase in @cycle_filt")
+          .index
+      ],
+      gene_list=gene_list,
+      cols_of_interest={"index", "lineage", "celltype", "cyclephase"}
+    ).assign(cyclephase=lambda x:
+        x.cyclephase.astype("str").astype("category").cat.reorder_categories(cycle_filt, ordered=True)
+    )
+
+  ## precalculate stat
+  return (
+    so.Plot(
+      (
+        sc_obs_tmp
+        .groupby(["gene_id", "cyclephase", "lineage"])
+        .agg({"norm_expr": ['mean', 'min', 'max', 'sem']})
+        .droplevel(0, axis=1)
+        .reset_index()
+        .assign(se_min=lambda x: x["mean"] - x["sem"], se_max=lambda x: x["mean"] + x["sem"])
+      ),
+      x="cyclephase",
+      y="mean",
+      ymin="se_min",
+      ymax="se_max",
+      color="lineage"
+    )
+    # .layout(size=(9,12))
+    .add(so.Line())
+    .add(so.Band(alpha=.2))
+    .facet(None, "gene_id", wrap=wrap_rows)
+    .share(y=False)
+    .theme(sns.axes_style("white") | sns.plotting_context("notebook"))
+  )
+
+```
+
+::: {.panel-tabset}
+
+## Implantation DE
+
+First lets look at the expression changes of **implantation or implantation failure DE genes** throughout the menstrual cycle for every major cell typ.
+
+```{python}
+plot_gene_list(sc_dat, clin_de_genes, wrap_rows=11)
+```
+
+## ESCRT-0
+
+Then, we have ESCRT-0 complex markers to investigate: HGS, STAM, STAM2
+
+```{python}
+gene_selection=["HGS", "STAM", "STAM2"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## ESCRT-I
+
+ESCRT-I complex markers: MVB12A,MVB12B,TSG101,UBAP1,VPS28,VPS37A,VPS37B,VPS37C,VPS37D
+
+```{python}
+gene_selection=["MVB12A", "MVB12B", "TSG101", "UBAP1", "VPS28", "VPS37A", "VPS37B", "VPS37C", "VPS37D"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+```
+
+## ESCRT-II
+
+ESCRT-II complex markers: SNF8,VPS25,VPS36
+
+```{python}
+gene_selection=["SNF8","VPS25","VPS36"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## ESCRT-III
+
+ESCRT-III complex markers: CHMP2A,CHMP2B,CHMP3,CHMP4A,CHMP4B,CHMP4C,CHMP6  
+
+```{python}
+gene_selection=["CHMP2A","CHMP2B","CHMP3","CHMP4A","CHMP4B","CHMP4C","CHMP6"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+```
+
+## ESCRT-IV
+
+ESCRT-III complex markers: VPS4A,VPS4B,VTA1  
+
+```{python}
+gene_selection=["VPS4A","VPS4B","VTA1"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## Tetraspanins
+
+Tetraspanins and other cargo markers:  CD9, CD63, CD81, ALIX, SDCBP  
+
+```{python}
+gene_selection=["CD9", "CD63", "CD81", "ALIX", "SDCBP"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+```
+
+:::
+
+
 # Single cell deconvolution and projection
 
 We'd be interested in using scRNA-seq atlas to deconvolve the EV data. This helps us understand where are those EV produced and which tissue signal they are capturing. To run single cell and projection, we are gonna use [TAPE](https://www.nature.com/articles/s41467-022-34550-9) algorithm.
@@ -173,8 +382,9 @@ We'd be interested in using scRNA-seq atlas to deconvolve the EV data. This help
 First we'll need to reformat the raw bulk RNA samples from EV to matrix form and prepare some plotting functions.
 
 ```{python}
+#| output: false
 
-## switch the expression matrix to raw counts
+## switch the expression matrix to raw counts if the matrix is preprocessed
 sc_dat.layers["scaled"] = sc_dat.X
 sc_dat.X = sc_dat.layers["counts"]
 del sc_dat.layers["counts"]
@@ -182,35 +392,18 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 500,
-  "max_single_cells": 5000,
+  "max_single_cells": 8000,
   "ratio_num": 1,
   "gpu": 0
 }
 
 frac_params = {
   "batch_size": 512, 
-  "epochs": 500, # looking at loss plot then 500 seems to be already enough
+  "epochs": 2500, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
   "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
 }
-
-```
-
-```{python}
-
-fractions_folder = Path(data_folder) / "tape_fractions_immu"
-fractions_file = fractions_folder / "comb_fracs.tsv"
-if not fractions_file.expanduser().exists():
-  frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
-else:
-  model_obj = ov.bulk2single.Bulk2Single(
-    bulk_data=comb_uf_raw,
-    single_data=sc_dat,
-    **model_params
-  )
-  frac_pred = model_obj.predicted_fraction(**frac_params)
-  frac_pred.to_csv(fractions_file, sep = "\t")
 
 ```
 
@@ -291,16 +484,52 @@ def dendro_barplot(
   # Legend for bar colors (classes)
   handles, labels = ax_bar.get_legend_handles_labels()
   legend_classes = ax_bar.legend(
-    handles=handles,
-    labels=labels,
-    title='Cell Types',
-    bbox_to_anchor=legend_class_bbox,
-    loc='lower left',
+    handles=handles, 
+    labels=labels, 
+    title='Cell Types', 
+    bbox_to_anchor=legend_class_bbox, 
+    loc='lower left', 
     ncol=legend_class_ncol
     )
 
   # Add both legends to the plot
   ax_bar.add_artist(legend_phases)
+  plt.show()
+
+```
+
+```{python}
+
+def biplot_fractions(frac_obj, pheno, legend_title="Cycle Phase", kwargs={}):
+  ## don't scale as the counts are props anyways
+  pca = PCA(n_components=2)
+  pca_df = (
+    pd.DataFrame(data=pca.fit_transform(frac_obj), columns=["PC1", "PC2"])
+    .set_index(frac_obj.index)
+    .merge(pheno, left_index=True, right_index=True)
+  )
+  expl_var = pca.explained_variance_ratio_
+  loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+  # Visualize the PCA results
+  plt.figure(figsize=(8, 6))
+  sns.scatterplot(x='PC1', y='PC2', data=pca_df, **kwargs)
+
+  # Plot the loadings as a biplot
+  for i, feature in enumerate(frac_obj): 
+    plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
+    # write only signf loadings
+    if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
+      plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
+
+  plt.title('PCA Result')
+  plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
+  plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
+  plt.legend(title=legend_title, loc="upper left", bbox_to_anchor=(1.05, 1))
+  plt.grid(False)
+  # Major grid only
+  plt.axhline(0, color="lightgray", linewidth=1)
+  plt.axvline(0, color="lightgray", linewidth=1)
   plt.show()
 
 ```
@@ -366,36 +595,27 @@ def cor_table(fracs_long) -> pd.DataFrame:
 
 ## All samples
 
-The deconvolution results of both biopsy and UF samples as an interactive heatmap:
-
 ```{python}
 
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
+fractions_folder = Path(data_folder) / "tape_fractions"
+fractions_file = fractions_folder / "comb_fracs.tsv"
+if fractions_file.expanduser().exists() and not rerun_all:
+  frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
+else:
+  model_obj = ov.bulk2single.Bulk2Single(
+    bulk_data=comb_uf_raw,
+    single_data=sc_dat,
+    **model_params
+  )
+  frac_pred = model_obj.predicted_fraction(**frac_params)
+  frac_pred.to_csv(fractions_file, sep = "\t")
 
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  comb_uf_pheno.group.unique(),
-  sns.color_palette("Set2", comb_uf_pheno.group.unique().size).as_hex()
-  ))
-
-row_colors = comb_uf_pheno.reindex(frac_pred.index.values).group.astype("object").map(lut)
-
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
+general_cells = (
+  sc_dat.obs
+  .loc[:, ["lineage", "celltype"]]
+  .drop_duplicates("celltype")
+  .set_index("celltype", drop=True)
+  .reindex(frac_pred.columns.values)
 )
 
 ```
@@ -405,12 +625,12 @@ As the proportions add up to one, we can also generate a stacked barplot for the
 ```{python}
 
 dendro_barplot(
-  frac_pred, 
+  frac_pred,
   comb_uf_pheno,
-  legend_phase_bbox=(1.05, 0.2),
-  legend_class_bbox=(1.05, 0.2),
+  legend_phase_bbox=(1.05, -0.2),
+  legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
-  legend_class_ncol=2
+  legend_class_ncol=3
   )
 
 ```
@@ -419,38 +639,53 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(comb_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', style="group", data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(frac_pred, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+```{python}
+
+the_code_block = """
+focus_celltypes = general_cells.query("lineage == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props_comb.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(general_cells.lineage):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
+
+```
+
+{{< include _ev_corr_props_comb.qmd >}}
+
+:::
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -486,55 +721,24 @@ res_join.to_excel(fractions_folder / "comb_bio.xlsx", sheet_name="combined_bio")
 
 ## Only EV of Combined dataset
 
-The deconvolution results of both biopsy and UF samples as an heatmap:
-
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
-
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  comb_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", comb_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = comb_uf_pheno.reindex(
-  comb_uf_pheno.query("group == 'UF'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-# subset only uf samples
-frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
 As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
 
+# subset only uf samples
+frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
+
+```
+
+```{python}
+
 dendro_barplot(
-  frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index],
+  frac_tmp,
   comb_uf_pheno,
-  legend_phase_bbox=(1.05, 0.2),
-  legend_class_bbox=(1.05, 0.2),
+  legend_phase_bbox=(1.05, -0.2),
+  legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
-  legend_class_ncol=2
+  legend_class_ncol=3
   )
 
 ```
@@ -543,38 +747,53 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index].index)
-  .merge(comb_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+```{python}
+
+the_code_block = """
+focus_celltypes = general_cells.query("lineage == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_tmp.filter(focus_celltypes, axis=1),
+  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
+  index=frac_tmp.index
+)
+
+dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props_combsub.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(general_cells.lineage):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
+
+```
+
+{{< include _ev_corr_props_combsub.qmd >}}
+
+:::
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -584,7 +803,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index], comb_uf_pheno)
+frac_long = convert_to_long(frac_tmp, comb_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -611,14 +830,20 @@ res_join.to_excel(fractions_folder / "comb_uf.xlsx", sheet_name="combined_uf")
 The deconvolution results of both biopsy and UF samples as an heatmap:
 
 ```{python}
+# subset only uf samples
+frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
+
+```
+
+```{python}
 
 # create a colormap
 lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
+  general_cells.lineage.unique(),
+  sns.color_palette("Set2", general_cells.lineage.unique().size).as_hex()
   ))
 
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
+col_colors = general_cells.lineage.astype("object").map(lut)
 
 # create a colormap
 lut = dict(zip(
@@ -630,8 +855,6 @@ row_colors = comb_uf_pheno.reindex(
   comb_uf_pheno.query("group == 'biopsy'").index.values
   ).cyclephase.astype("object").map(lut)
 
-# subset only uf samples
-frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
 dash_bio.Clustergram(
   data=frac_tmp,
   column_labels=list(frac_tmp.columns.values),
@@ -651,12 +874,12 @@ As the proportions add up to one, we can also generate a stacked barplot for the
 ```{python}
 
 dendro_barplot(
-  frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index],
+  frac_tmp,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
   legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
-  legend_class_ncol=2
+  legend_class_ncol=3
   )
 
 ```
@@ -665,38 +888,17 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index].index)
-  .merge(comb_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+{{< include _ev_corr_props_combsub.qmd >}}
+
+:::
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -706,7 +908,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index], comb_uf_pheno)
+frac_long = convert_to_long(frac_tmp, comb_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -736,7 +938,7 @@ This dataset has only CCHT samples without batch correction. These also include 
 ```{python}
 
 fractions_file = fractions_folder / "ccht_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -747,45 +949,15 @@ else:
   frac_pred = model_obj.predicted_fraction(**frac_params)
   frac_pred.to_csv(fractions_file, sep = "\t")
 
-```
-
-The deconvolution results of both biopsy and UF samples as an heatmap:
-
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
-
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  ccht_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = ccht_uf_pheno.reindex(
-  ccht_uf_pheno.query("group == 'UF'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-# subset only uf samples
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
+general_cells = (
+  sc_dat.obs
+  .loc[:, ["lineage", "celltype"]]
+  .drop_duplicates("celltype")
+  .set_index("celltype", drop=True)
+  .reindex(frac_pred.columns.values)
 )
 
 ```
-
 
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
@@ -796,7 +968,7 @@ dendro_barplot(
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, 0.1),
   legend_class_bbox=(1.05, 0.1),
-  legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
+  legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
 
@@ -806,38 +978,53 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(ccht_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', style="group", data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(frac_pred, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+```{python}
+
+the_code_block = """
+focus_celltypes = general_cells.query("lineage == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props_ccht.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(general_cells.lineage):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
+
+```
+
+{{< include _ev_corr_props_ccht.qmd >}}
+
+:::
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -875,52 +1062,23 @@ res_join.to_excel(fractions_folder / "ccht_bio.xlsx", sheet_name="ccht_bio")
 
 This dataset has only CCHT samples of EV variety, this means without batch correction applied.
 
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
-
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  ccht_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = ccht_uf_pheno.reindex(
-  ccht_uf_pheno.query("group == 'UF'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-# subset only uf samples
-frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1200,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
 
+# subset only uf samples
+frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
+
+```
+
+```{python}
+
 dendro_barplot(
-  frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index], 
+  frac_tmp,
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
-  legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
+  legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
 
@@ -930,38 +1088,53 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index].index)
-  .merge(ccht_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+```{python}
+
+the_code_block = """
+focus_celltypes = general_cells.query("lineage == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_tmp.filter(focus_celltypes, axis=1),
+  normalize(frac_tmp.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_tmp.filter(focus_celltypes, axis=1).columns,
+  index=frac_tmp.index
+)
+
+dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props_cchtsub.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(general_cells.lineage):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
+
+```
+
+{{< include _ev_corr_props_cchtsub.qmd >}}
+
+:::
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -971,7 +1144,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index], ccht_uf_pheno)
+frac_long = convert_to_long(frac_tmp, ccht_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -999,37 +1172,8 @@ This dataset has only CCHT samples of biopsies, this means without batch correct
 
 ```{python}
 
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
-
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  ccht_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = ccht_uf_pheno.reindex(
-  ccht_uf_pheno.query("group == 'biopsy'").index.values
-  ).cyclephase.astype("object").map(lut)
-
 # subset only uf samples
 frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1200,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
 
 ```
 
@@ -1038,11 +1182,11 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 ```{python}
 
 dendro_barplot(
-  frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index], 
+  frac_tmp, 
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
-  legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
+  legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
 
@@ -1052,38 +1196,17 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]), columns=["PC1", "PC2"])
-  .set_index(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index].index)
-  .merge(ccht_uf_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='cyclephase', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Cycle Phase', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+{{< include _ev_corr_props_cchtsub.qmd >}}
+
+:::
 
 Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
@@ -1093,7 +1216,7 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index], ccht_uf_pheno)
+frac_long = convert_to_long(frac_tmp, ccht_uf_pheno)
 
 # perform the tukey hsd analysis
 tukey_res = tukey_table(frac_long)
@@ -1115,13 +1238,12 @@ res_join.to_excel(fractions_folder / "ccht_bio.xlsx", sheet_name="ccht_bio")
 
 ```
 
-
 ## SCRATCH2
 
 ```{python}
 
 fractions_file = fractions_folder / "scratch_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -1132,40 +1254,16 @@ else:
   frac_pred = model_obj.predicted_fraction(**frac_params)
   frac_pred.to_csv(fractions_file, sep = "\t")
 
-```
-
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
-
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  scratch_pheno.no_lb.unique(),
-  sns.color_palette("Set2", scratch_pheno.no_lb.unique().size).as_hex()
-  ))
-
-row_colors = scratch_pheno.reindex(
-  scratch_pheno.index.values
-  ).no_lb.astype("object").map(lut)
-
-# subset only uf samples
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
+general_cells = (
+  sc_dat.obs
+  .loc[:, ["lineage", "celltype"]]
+  .drop_duplicates("celltype")
+  .set_index("celltype", drop=True)
+  .reindex(frac_pred.columns.values)
 )
+
+# save it for later
+scratch_pred = frac_pred.copy()
 
 ```
 
@@ -1189,40 +1287,70 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(scratch_pheno, left_index=True, right_index=True)
-)
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='status_rif', style="no_lb", data=pca_df, palette='flare')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Implantation', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
+biplot_fractions(
+  frac_pred, scratch_pheno,
+  legend_title="RIF stage",
+  kwargs={"hue":"status_rif", "palette":"flare", "style":"no_lb"}
+  )
 
 ```
 
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+```{python}
+
+the_code_block = """
+focus_celltypes = general_cells.query("lineage == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(
+  frac_pred_gen,
+  scratch_pheno,
+  legend_class_ncol=2,
+  pheno_dat_col="no_lb"
+)
+
+biplot_fractions(
+  frac_pred_gen, scratch_pheno,
+  legend_title="RIF stage",
+  kwargs={"hue":"status_rif", "palette":"flare", "style":"no_lb"}
+)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props_scratch.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(general_cells.lineage):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
+
+```
+
+{{< include _ev_corr_props_scratch.qmd >}}
+
+:::
+
 Perform t-test for the pairwise differences of RIF and CTRL samples for each cell type.
+
 * How strong is the trend of changing values throughout the cycle phases? -> rank correlation throughout the cycle phases in temporal order.
 
 ```{python}
@@ -1242,12 +1370,13 @@ ttest_table.to_excel(fractions_folder / "scratch_test.xlsx", sheet_name="scratch
 
 ```
 
+
 ## Clinical samples
 
 ```{python}
 
 fractions_file = fractions_folder / "clin_fracs.tsv"
-if not fractions_file.expanduser().exists():
+if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
 else:
   model_obj = ov.bulk2single.Bulk2Single(
@@ -1258,39 +1387,12 @@ else:
   frac_pred = model_obj.predicted_fraction(**frac_params)
   frac_pred.to_csv(fractions_file, sep = "\t")
 
-```
-
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  sc_dat.obs.celltype.unique(),
-  sns.color_palette("Set2", sc_dat.obs.celltype.unique().size).as_hex()
-  ))
-
-col_colors = sc_dat.obs.celltype.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  clin_uf_pheno.implantation.unique(),
-  sns.color_palette("Set2", clin_uf_pheno.implantation.unique().size).as_hex()
-  ))
-
-row_colors = clin_uf_pheno.reindex(
-  clin_uf_pheno.index.values
-  ).implantation.astype("object").map(lut)
-
-# subset only uf samples
-dash_bio.Clustergram(
-  data=frac_pred,
-  column_labels=list(frac_pred.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_pred.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
+general_cells = (
+  sc_dat.obs
+  .loc[:, ["lineage", "celltype"]]
+  .drop_duplicates("celltype")
+  .set_index("celltype", drop=True)
+  .reindex(frac_pred.columns.values)
 )
 
 ```
@@ -1315,38 +1417,67 @@ Apply PCA on the proportions.
 
 ```{python}
 
-## don't scale as the counts are props anyways
-pca = PCA(n_components=2)
-pca_df = (
-  pd.DataFrame(data=pca.fit_transform(frac_pred), columns=["PC1", "PC2"])
-  .set_index(frac_pred.index)
-  .merge(clin_uf_pheno, left_index=True, right_index=True)
+biplot_fractions(
+  frac_pred, clin_uf_pheno, 
+  legend_title="Implantation", 
+  kwargs={"hue":"implantation", "palette":"Set1"} 
 )
-expl_var = pca.explained_variance_ratio_
-loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-# Visualize the PCA results
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x='PC1', y='PC2', hue='implantation', style='n_transfer_embryo', data=pca_df, palette='Set1')
-
-# Plot the loadings as a biplot
-for i, feature in enumerate(frac_pred): 
-  plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-  # write only signf loadings
-  if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-    plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-plt.title('PCA Result')
-plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-plt.legend(title='Implantation', loc="upper left", bbox_to_anchor=(1.05, 1))
-plt.grid(False)
-# Major grid only
-plt.axhline(0, color="lightgray", linewidth=1)
-plt.axvline(0, color="lightgray", linewidth=1)
-plt.show()
 
 ```
+
+Or **by major cell types**:
+
+::: {.panel-tabset}
+
+```{python}
+
+the_code_block = """
+focus_celltypes = general_cells.query("lineage == @general_ct").index
+
+frac_pred_gen = pd.DataFrame(
+  # frac_pred.filter(focus_celltypes, axis=1),
+  normalize(frac_pred.filter(focus_celltypes, axis=1), axis=1, norm="l1"),
+  columns=frac_pred.filter(focus_celltypes, axis=1).columns,
+  index=frac_pred.index
+)
+
+dendro_barplot(
+  frac_pred_gen, 
+  clin_uf_pheno, 
+  legend_class_ncol=2,
+  pheno_dat_col="implantation"
+)
+
+biplot_fractions(
+  frac_pred_gen, clin_uf_pheno, 
+  legend_title="Implantation", 
+  kwargs={"hue":"implantation", "palette":"Set1"} 
+)
+"""
+
+# generate a temporary file and write the logic there
+tmp_section_f = "_ev_corr_props_clin.qmd"
+with open(tmp_section_f, 'w') as section_f:
+  for general_ct in set(general_cells.lineage):
+    the_lines = [
+      # header
+      "### " + general_ct + " {.unnumbered .unlisted}\n\n",
+      # some description text
+      "The proportions of the cell types within the general celltypes.\n\n",
+      # start of block
+      "```{python}\n",
+      f"general_ct = '{general_ct}'\n",
+      the_code_block,
+      # end of block
+      "```\n\n"
+      ]
+    section_f.writelines(the_lines)
+
+```
+
+{{< include _ev_corr_props_clin.qmd >}}
+
+:::
 
 Perform t-test for the pairwise differences of RIF and CTRL samples for each cell type.
 
@@ -1354,18 +1485,18 @@ Perform t-test for the pairwise differences of RIF and CTRL samples for each cel
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred, clin_uf_pheno)
+# frac_long = convert_to_long(frac_pred, clin_uf_pheno)
 
-# write the t-testing function
-ttest_table = pd.DataFrame({
-  celltype: {
-    "z_stat": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).statistic,
-    "p-val": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).pvalue,
-  }
-  for celltype, dat in frac_long.groupby("celltype")
-}).T
+# # write the t-testing function
+# ttest_table = pd.DataFrame({
+#   celltype: {
+#     "z_stat": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).statistic,
+#     "p-val": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).pvalue,
+#   }
+#   for celltype, dat in frac_long.drop(columns=["n_transfer_embryo"]).groupby("celltype")
+# }).T
 
-ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
+# ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
 
 ```
 
@@ -1399,7 +1530,7 @@ Here we compare the clinical sample fractions with the CCHT HUT sampleset, both 
 
 ::: {.panel-tabset}
 
-### Biopsy
+### UF on CCHT biopsy
 
 ```{python}
 
@@ -1423,7 +1554,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
 mah_res = pd.DataFrame(
   list_to_df,
   columns=["cyclephase", "celltype", "samplename", "mah_dist"]
-  ).set_index("samplename")
+).set_index("samplename")
 
 mah_means = {}
 for cyclephase in frac_ccht.cyclephase.unique():
@@ -1436,12 +1567,12 @@ for cyclephase in frac_ccht.cyclephase.unique():
     # .mean(axis=1)
   })
 
-mah_means = clin_uf_pheno.drop(columns="n_transfer_embryo").merge(pd.DataFrame(mah_means), left_index=True, right_index=True)
+mah_means = clin_uf_pheno.drop(columns=["n_transfer_embryo"]).merge(pd.DataFrame(mah_means), left_index=True, right_index=True)
 # make a heatmap or smth
 
 ```
 
-The distances visualised as a heatmap.
+The Mahalanobis distances visualised as a heatmap.
 
 ```{python}
 
@@ -1503,6 +1634,111 @@ sns.scatterplot(x='PC1', y='PC2', hue='group', style="dataset", data=pca_df, pal
 
 ```
 
+### SCRATCH2 on CCHT biopsy
+
+```{python}
+
+# load the fractions
+frac_clin = scratch_pred # reuse already processed file
+frac_ccht_mat = pd.read_table(fractions_folder / "ccht_fracs.tsv", sep="\t", index_col=0)
+frac_ccht = convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'biopsy'"))
+
+list_to_df = []
+for cyclephase in frac_ccht.cyclephase.unique():
+  for celltype in frac_ccht.celltype.unique():
+    ref_vals = frac_ccht.query("cyclephase == @cyclephase & celltype == @celltype").ratio.values
+    for samplename in frac_clin.index:
+      list_to_df.append([
+        cyclephase,
+        celltype,
+        samplename,
+        mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
+      ])
+
+mah_res = pd.DataFrame(
+  list_to_df,
+  columns=["cyclephase", "celltype", "samplename", "mah_dist"]
+  ).set_index("samplename")
+
+mah_means = {}
+for cyclephase in frac_ccht.cyclephase.unique():
+  mah_means.update({
+    cyclephase:
+    mah_res
+    .query("cyclephase == @cyclephase")
+    .pivot_table(index="samplename", columns="celltype", values="mah_dist")
+    .apply(geometric_mean, axis=1)
+    # .mean(axis=1)
+  })
+
+mah_means = scratch_pheno.drop(columns=["HID", "ages", "Timing_LH", "no_lb"]).merge(pd.DataFrame(mah_means), left_index=True, right_index=True)
+# make a heatmap or smth
+
+```
+
+The Mahalanobis distances visualised as a heatmap. Higher RIF classification has lighter color.
+
+```{python}
+
+# create a colormap
+lut = dict(zip(
+  np.sort(mah_means.status_rif.unique()),
+  sns.color_palette("magma", mah_means.status_rif.unique().size).as_hex()
+  ))
+
+row_colors = mah_means.reindex(
+  mah_means.index.values
+  ).status_rif.astype("object").map(lut)
+
+# subset only uf samples
+dash_bio.Clustergram(
+  data=mah_means.drop(columns=["status_rif"]),
+  column_labels=list(mah_means.drop(columns=["status_rif"]).columns.values),
+  row_labels=list(mah_means.index),
+  row_colors=list(row_colors),
+  height=900,
+  width=600
+)
+
+```
+
+And when projecting onto the cyclephase reference samples' PCA space.
+
+```{python}
+
+## don't scale as the values are props anyways
+pca = PCA(n_components=2)
+frac_uf_mat = frac_ccht_mat.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
+pca = pca.fit(frac_uf_mat)
+
+pca_df_ccht = (
+  pd.DataFrame(
+    data=pca.transform(frac_uf_mat),
+    columns=["PC1", "PC2"]
+    )
+  .set_index(frac_uf_mat.index)
+  .merge(ccht_uf_pheno, left_index=True, right_index=True)
+  .drop(columns=["group"])
+  .rename(columns={"cyclephase": "group"})
+)
+
+pca_df_clin = (
+  pd.DataFrame(data=pca.transform(frac_clin), columns=["PC1", "PC2"])
+  .set_index(frac_clin.index)
+  .merge(scratch_pheno, left_index=True, right_index=True)
+  .replace({True: "imp", False: "non-imp"})
+  .rename(columns={"status_rif": "group", "no_lb": "dataset"})
+)
+
+pca_df = pd.concat([pca_df_ccht, pca_df_clin])
+
+# Visualize the PCA results
+plt.figure(figsize=(8, 6))
+sns.scatterplot(x='PC1', y='PC2', hue='group', style="dataset", data=pca_df, palette='Set2')
+
+```
+
+
 ### UF
 
 ```{python}
@@ -1540,7 +1776,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
     # .mean(axis=1)
   })
 
-mah_means = clin_uf_pheno.drop(columns="n_transfer_embryo").merge(pd.DataFrame(mah_means), left_index=True, right_index=True)
+mah_means = clin_uf_pheno.drop(columns=["n_transfer_embryo"]).merge(pd.DataFrame(mah_means), left_index=True, right_index=True)
 # make a heatmap or smth
 
 ```
