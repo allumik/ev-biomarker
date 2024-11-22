@@ -116,8 +116,11 @@ sc_dat.obs = (
 )
 
 ## exclude some celltypes, such as she hormones cell types
+## also exclude cell types that have too few cells to begin with
 ## also exclude the endometriosis samples
-the_condition = "celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
+count_tmp = sc_dat.obs.celltype.value_counts()
+no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
+the_condition = "celltype not in @no_go_celltype & Endometrial_pathology == 'C'"
 sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
 sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
@@ -153,7 +156,6 @@ for vis_fold in slides_path.glob("*/"):
   vis_dat.raw = vis_dat
   vis_dat = vis_dat[:, vis_dat.var.highly_variable_features]
   vis_dats[slide_id] = vis_dat
-  # adata_sp
 
 vis_keys = list(vis_dats.keys())
 
@@ -176,8 +178,8 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 500,
-  "max_single_cells": 10000,
-  "ratio_num": 1,
+  "max_single_cells": 5000,
+  "ratio_num": 0.8, # might solve some of the artifact problems
   "gpu": 0
 }
 
@@ -235,7 +237,7 @@ else:
 
 ```
 
-The generated dataset is then preprocessed, scaled, embedded into lower dimensions and clustered via Leiden.
+The generated dataset is then preprocessed, scaled, embedded into lower dimensions and clustered via Leiden. The visualisation is done using celltype annotation from HECA
 
 ```{python}
 
@@ -249,14 +251,14 @@ ov.pl.embedding(
   basis='X_pca',
   color='celltype',
   frameon='small'
-  )
+)
 
 ov.pp.neighbors(
   gen_ccht_ev, 
   n_neighbors=15, 
   n_pcs=50,
   use_rep='scaled|original|X_pca'
-  )
+)
 
 ov.pp.umap(gen_ccht_ev)
 
@@ -265,7 +267,15 @@ ov.pl.embedding(
   basis='X_umap',
   color='celltype',
   frameon='small'
-  )
+)
+
+ov.pl.embedding(
+  gen_ccht_ev,
+  basis='X_umap',
+  color='lineage',
+  frameon='small'
+)
+
 
 ```
 
@@ -318,8 +328,8 @@ ov.pl.embedding(
   )
 
 ov.pp.neighbors(
-  gen_ccht_bio, 
-  n_neighbors=15, 
+  gen_ccht_bio,
+  n_neighbors=15,
   n_pcs=50,
   use_rep='scaled|original|X_pca'
   )
@@ -511,7 +521,7 @@ Visualise the results
 ```{python}
 
 # TODO multiclass colors for each major cell type group
-ct_group = "Stromal"
+ct_group = "Epithelial"
 cts = gen_ccht_ev.obs.query("lineage==@ct_group").celltype.unique()
 sc.pl.spatial(
   vis_dat_proj,
