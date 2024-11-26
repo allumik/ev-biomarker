@@ -43,7 +43,7 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 
 ## Do you want to rerun all the models?
-rerun_all = True
+rerun_all = False
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -119,7 +119,7 @@ sc_dat.obs = (
 ## also exclude cell types that have too few cells to begin with
 ## also exclude the endometriosis samples
 count_tmp = sc_dat.obs.celltype.value_counts()
-no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
+no_go_celltype = list(count_tmp[count_tmp < 50].index) + ['eHormones', 'sHormones', 'dHormones']
 the_condition = "celltype not in @no_go_celltype & Endometrial_pathology == 'C'"
 sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
@@ -178,7 +178,7 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 500,
-  "max_single_cells": 5000,
+  "max_single_cells": 8000, # increase the single cell count for sampling
   "ratio_num": 0.8, # might solve some of the artifact problems
   "gpu": 0
 }
@@ -254,8 +254,8 @@ ov.pl.embedding(
 )
 
 ov.pp.neighbors(
-  gen_ccht_ev, 
-  n_neighbors=15, 
+  gen_ccht_ev,
+  n_neighbors=15,
   n_pcs=50,
   use_rep='scaled|original|X_pca'
 )
@@ -275,7 +275,6 @@ ov.pl.embedding(
   color='lineage',
   frameon='small'
 )
-
 
 ```
 
@@ -303,7 +302,7 @@ else:
     )
   gen_ccht_bio = model_obj.generate()
   gen_ccht_bio.obs = gen_ccht_bio.obs.join(
-    sc_dat.obs[["celltype", "lineage"]].drop_duplicates().set_index("celltype"), 
+    sc_dat.obs[["celltype", "lineage"]].drop_duplicates().set_index("celltype"),
     on="celltype"
     )
   gen_ccht_bio.write(gen_sc_file)
@@ -325,23 +324,29 @@ ov.pl.embedding(
   basis='X_pca',
   color='celltype',
   frameon='small'
-  )
+)
 
 ov.pp.neighbors(
   gen_ccht_bio,
   n_neighbors=15,
   n_pcs=50,
   use_rep='scaled|original|X_pca'
-  )
+)
 
 ov.pp.umap(gen_ccht_bio)
 
-ov.pl.embedding(
-  gen_ccht_bio,
+ov.pl.embedding( gen_ccht_bio,
   basis='X_umap',
   color='celltype',
   frameon='small'
-  )
+)
+
+ov.pl.embedding(
+  gen_ccht_ev,
+  basis='X_umap',
+  color='lineage',
+  frameon='small'
+)
 
 ```
 

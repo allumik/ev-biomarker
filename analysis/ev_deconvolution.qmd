@@ -165,8 +165,12 @@ scratch_mat = (
 )
 
 ## load in the EV CCHT only data
-ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "orig" / "annot_raw.feather").set_index("gene_id").iloc[:-1]
-ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "orig" / "phenotype.tsv").set_index("samplename")
+ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "filtered" / "annot_raw.feather").set_index("gene_id").iloc[:-1]
+ccht_uf_pheno = (
+  pd.read_table(Path(data_folder).expanduser() / "filtered" / "phenotype.tsv")
+  .set_index("samplename")
+  .query("samplename in @ccht_uf_raw.columns")
+)
 
 ## load in clinical samples
 clin_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "clin_counts_raw.feather").iloc[:-1]
@@ -964,7 +968,7 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 ```{python}
 
 dendro_barplot(
-  frac_pred, 
+  frac_pred,
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, 0.1),
   legend_class_bbox=(1.05, 0.1),

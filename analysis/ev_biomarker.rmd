@@ -164,7 +164,9 @@ if (file.exists(dataobj)) {
   commandArgs <- function(...)
     list(
       switch_sample = "HUT23",
-      remove_sample = c("HUT71_UF", "HUT10_UF", "HUT17_UF", "HUT1_UF"),
+      remove_sample = c(
+        "HUT10_UF", "HUT1_UF", "HUT1_biopsy", "HUT35_UF", "HUT42_UF", "HUT71_biopsy_2", "HUT71_biopsy_3"
+        ),
       data_subfolder = data_subfolder
       ) #  c("HUT71_UF", "HUT1_UF", "HUT01_UF", "HUT17_UF", "HUT10_UF"))
   dir.create(data_subfolder, showWarnings = F)

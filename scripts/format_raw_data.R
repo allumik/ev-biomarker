@@ -1,6 +1,8 @@
 #### Script to format the raw data for the analysis
 # load dependencies
 source("./scripts/load_deps.R")
+args <- commandArgs(trailingOnly = TRUE)
+print(args)
 
 #### Load the functions and settings
 source("./scripts/backend_env_functions.R")
@@ -69,12 +71,12 @@ if(any(str_detect(names(args), "switch"))) {
     rename(
       ## this takes too much time to figure out how to switch programmatically
       HUT23_biopsy = HUT23_UF,
-      HUT23_UF = HUT23_biopsy,
+      HUT23_UF = HUT23_biopsy
     )
   raw_tpm %<>%
     rename(
       HUT23_biopsy = HUT23_UF,
-      HUT23_UF = HUT23_biopsy,
+      HUT23_UF = HUT23_biopsy
     )
 }
 
