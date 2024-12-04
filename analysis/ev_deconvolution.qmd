@@ -44,7 +44,7 @@ from matplotlib.patches import Patch
 from sklearn.preprocessing import normalize
 
 ## Do you want to rerun all the models?
-rerun_all = True
+rerun_all = False
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -120,7 +120,7 @@ sc_dat.obs = (
 the_condition = "celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
 sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
-sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
+sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="pearson|pearson", n_HVGs=3000)
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
 # check the minimum size of celltype matrix after filtering
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
@@ -195,29 +195,23 @@ clin_uf_raw = clin_uf_raw.loc[:, clin_uf_pheno.index]
 Check out the number of cells in each dataset with the origin of the cell.
 
 ```{python}
-
 sns.displot(sc_dat.obs, x="dataset", hue="Stage", multiple="stack").set_xticklabels(rotation=90)
-
 ```
 
 Or just comparison between celltypes in different HECA datasets
 
 ```{python}
-
 g = sns.displot(sc_dat.obs, x="dataset", hue="celltype", multiple="stack").set_xticklabels(rotation=90)
 sns.move_legend(g, "center right", fancybox=True, ncol=2, bbox_to_anchor=(1.25,0.5))
-
 ```
 
 How many different classes of biopsy types there are in the whole dataset?
 
 ```{python}
-
 sns.displot(
   sc_dat.obs[["samplename", "Biopsy_type"]].drop_duplicates(),
   x="Biopsy_type"
   ).set_xticklabels(rotation=90)
-
 ```
 
 # Biomarker expression through cyclephases in scRNA-seq
@@ -226,6 +220,8 @@ Here we first subset the single-cell atlas per following criteria:
 
 * We filter out samples with "Whole Uterus" biopsy type
 * Filter out celltypes marked as "dHormones", "eHormones" and "sHormones"
+
+For gene comparison, we use the normalised counts from the scRNA-seq HECA dataset. These counts are normalised via Pearson residuals-based variance-stabilizing transformation [related article](https://www.nature.com/articles/s41592-023-01814-1#MOESM3).
 
 Following this, well look at all the different cycle phases that are also represented in the UF dataset:
 
@@ -342,42 +338,93 @@ plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
 
 ## ESCRT-II
 
-ESCRT-II complex markers: SNF8,VPS25,VPS36
+ESCRT-II complex markers: SNF8, VPS25, VPS36
 
 ```{python}
-gene_selection=["SNF8","VPS25","VPS36"]
+gene_selection=["SNF8", "VPS25", "VPS36"]
 plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
 ```
 
 ## ESCRT-III
 
-ESCRT-III complex markers: CHMP2A,CHMP2B,CHMP3,CHMP4A,CHMP4B,CHMP4C,CHMP6  
+ESCRT-III complex markers: CHMP2A, CHMP2B, CHMP3, CHMP4A, CHMP4B, CHMP4C, CHMP6
 
 ```{python}
-gene_selection=["CHMP2A","CHMP2B","CHMP3","CHMP4A","CHMP4B","CHMP4C","CHMP6"]
+gene_selection=["CHMP2A", "CHMP2B", "CHMP3", "CHMP4A", "CHMP4B", "CHMP4C", "CHMP6"]
 plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
 ```
 
 ## ESCRT-IV
 
-ESCRT-III complex markers: VPS4A,VPS4B,VTA1  
+ESCRT-III complex markers: VPS4A,VPS4B,VTA1
 
 ```{python}
 gene_selection=["VPS4A","VPS4B","VTA1"]
 plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
 ```
 
-## Tetraspanins
+## ESCRT-independent
 
-Tetraspanins and other cargo markers:  CD9, CD63, CD81, ALIX, SDCBP  
+ESCRT-independent EV-associated markers: RAB31, SMPD3 (nSMASE2)
 
 ```{python}
-gene_selection=["CD9", "CD63", "CD81", "ALIX", "SDCBP"]
+# sc_dat.var.index[sc_dat.var.index.str.contains("SMPD")]
+gene_selection=["RAB31", "SMPD3"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## EV release gene markers
+
+Variations of RAB27, RAB11, RAB3, RAB7
+
+```{python}
+# sc_dat.var.index[sc_dat.var.index.str.contains("RAB")]
+gene_selection=["RAB27A", "RAB27B", "RAB11A", "RAB11B"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+```{python}
+gene_selection=["RAB3A", "RAB3B", "RAB3C", "RAB3D", "RAB7A", "RAB7B"]
 plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
 ```
 
-:::
+## Tetraspanins
 
+Tetraspanins and other cargo markers:  CD9, CD63, CD81, ALIX, SDCBP
+
+```{python}
+gene_selection=["CD9", "CD63", "CD81", "ALIX", "SDCBP"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## Accessory
+
+Accessory markers PDCD6IP, SDCBP (syntenin-1), SDC4 (syndecan)
+
+```{python}
+gene_selection=["PDCD6IP", "SDCBP", "SDC4"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
+```
+
+## log-shift - ESCRT-III
+
+For comparison, here we transform the matrix with a simple shifted log-tranformation and see how the reads for the ESCRT 3 complex look in comparison.
+
+```{python}
+## switch the expression matrix to raw counts if the matrix is preprocessed
+sc_dat_tmp = sc_dat.copy()
+sc_dat_tmp.X = sc_dat_tmp.layers["counts"]
+del sc_dat_tmp.layers["counts"]
+
+sc_dat_tmp = ov.pp.preprocess(sc_dat, mode="shiftlog|pearson", n_HVGs=3000, target_sum=50*1e4)
+gene_selection=["CHMP2A", "CHMP2B", "CHMP3", "CHMP4A", "CHMP4B", "CHMP4C", "CHMP6"]
+plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+del sc_dat_tmp
+```
+
+From first comparison it looks like the pearson method is better at making different cell profiles comparable with each other, all the while both methods preserve the relative expression levels between cycle phase groups.
+
+:::
 
 # Single cell deconvolution and projection
 
@@ -402,7 +449,7 @@ model_params = {
 }
 
 frac_params = {
-  "batch_size": 512, 
+  "batch_size": 512,
   "epochs": 2500, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
   "scaler": "ss", # seems to harmonise distributions better
@@ -600,7 +647,6 @@ def cor_table(fracs_long) -> pd.DataFrame:
 ## All samples
 
 ```{python}
-
 fractions_folder = Path(data_folder) / "tape_fractions"
 fractions_file = fractions_folder / "comb_fracs.tsv"
 if fractions_file.expanduser().exists() and not rerun_all:
@@ -621,13 +667,11 @@ general_cells = (
   .set_index("celltype", drop=True)
   .reindex(frac_pred.columns.values)
 )
-
 ```
 
 As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
-
 dendro_barplot(
   frac_pred,
   comb_uf_pheno,
@@ -636,15 +680,12 @@ dendro_barplot(
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
-
 ```
 
 Apply PCA on the proportions.
 
 ```{python}
-
 biplot_fractions(frac_pred, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
-
 ```
 
 Or **by major cell types**:
@@ -728,10 +769,8 @@ res_join.to_excel(fractions_folder / "comb_bio.xlsx", sheet_name="combined_bio")
 As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
-
 # subset only uf samples
 frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
-
 ```
 
 ```{python}
@@ -750,9 +789,7 @@ dendro_barplot(
 Apply PCA on the proportions.
 
 ```{python}
-
 biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
-
 ```
 
 Or **by major cell types**:
@@ -836,7 +873,6 @@ The deconvolution results of both biopsy and UF samples as an heatmap:
 ```{python}
 # subset only uf samples
 frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
-
 ```
 
 ```{python}
@@ -891,9 +927,7 @@ dendro_barplot(
 Apply PCA on the proportions.
 
 ```{python}
-
 biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
-
 ```
 
 Or **by major cell types**:
@@ -981,9 +1015,7 @@ dendro_barplot(
 Apply PCA on the proportions.
 
 ```{python}
-
 biplot_fractions(frac_pred, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
-
 ```
 
 Or **by major cell types**:
@@ -1069,10 +1101,8 @@ This dataset has only CCHT samples of EV variety, this means without batch corre
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
-
 # subset only uf samples
 frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
-
 ```
 
 ```{python}
@@ -1091,9 +1121,7 @@ dendro_barplot(
 Apply PCA on the proportions.
 
 ```{python}
-
 biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
-
 ```
 
 Or **by major cell types**:
@@ -1175,10 +1203,8 @@ res_join.to_excel(fractions_folder / "ccht_uf.xlsx", sheet_name="ccht_uf")
 This dataset has only CCHT samples of biopsies, this means without batch correction applied.
 
 ```{python}
-
 # subset only uf samples
 frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
-
 ```
 
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
@@ -1199,9 +1225,7 @@ dendro_barplot(
 Apply PCA on the proportions.
 
 ```{python}
-
 biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
-
 ```
 
 Or **by major cell types**:
@@ -1489,18 +1513,19 @@ Perform t-test for the pairwise differences of RIF and CTRL samples for each cel
 
 ```{python}
 
-# frac_long = convert_to_long(frac_pred, clin_uf_pheno)
+frac_long = convert_to_long(frac_pred, clin_uf_pheno).drop(columns=["n_transfer_embryo"])
 
-# # write the t-testing function
-# ttest_table = pd.DataFrame({
-#   celltype: {
-#     "z_stat": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).statistic,
-#     "p-val": ttest_ind(dat.query("implantation")["ratio"], dat.query("not implantation")["ratio"]).pvalue,
-#   }
-#   for celltype, dat in frac_long.drop(columns=["n_transfer_embryo"]).groupby("celltype")
-# }).T
-
-# ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
+# write the t-testing function
+ttest_table = pd.DataFrame({
+  celltype: {
+    "z_stat": ttest_ind(dat[dat["implantation"]]["ratio"], dat[~dat["implantation"]]["ratio"]).statistic,
+    "p-val": ttest_ind(dat[dat["implantation"]]["ratio"], dat[~dat["implantation"]]["ratio"]).pvalue,
+  }
+  for celltype, dat in frac_long.groupby("celltype"):
+    dat[~dat["implantation"]]
+}).T
+# 
+ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
 
 ```
 
