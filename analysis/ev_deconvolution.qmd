@@ -28,6 +28,7 @@ import plotly.express as px
 import dash_bio
 import seaborn.objects as so
 import matplotlib.pyplot as plt
+from IPython.display import HTML
 from pathlib import Path
 from os import getenv
 from dotenv import load_dotenv
@@ -390,7 +391,7 @@ plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
 
 ## Tetraspanins
 
-Tetraspanins and other cargo markers:  CD9, CD63, CD81, ALIX, SDCBP
+Tetraspanins and other cargo markers: CD9, CD63, CD81, ALIX, SDCBP
 
 ```{python}
 gene_selection=["CD9", "CD63", "CD81", "ALIX", "SDCBP"]
@@ -399,10 +400,10 @@ plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
 
 ## Accessory
 
-Accessory markers PDCD6IP, SDCBP (syntenin-1), SDC4 (syndecan)
+Accessory markers PDCD6IP, SDCBP (syntenin-1), SDC (syndecan)
 
 ```{python}
-gene_selection=["PDCD6IP", "SDCBP", "SDC4"]
+gene_selection=["PDCD6IP", "SDCBP", "SDC1", "SDC2", "SDC3", "SDC4"]
 plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
 ```
 
@@ -415,11 +416,14 @@ For comparison, here we transform the matrix with a simple shifted log-tranforma
 sc_dat_tmp = sc_dat.copy()
 sc_dat_tmp.X = sc_dat_tmp.layers["counts"]
 del sc_dat_tmp.layers["counts"]
+sc_dat_tmp = ov.pp.preprocess(sc_dat_tmp, mode="shiftlog|pearson", n_HVGs=3000, target_sum=50*1e4)
+```
 
-sc_dat_tmp = ov.pp.preprocess(sc_dat, mode="shiftlog|pearson", n_HVGs=3000, target_sum=50*1e4)
+```{python}
 gene_selection=["CHMP2A", "CHMP2B", "CHMP3", "CHMP4A", "CHMP4B", "CHMP4C", "CHMP6"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
+tmp_plt = plot_gene_list(sc_dat_tmp, gene_selection, wrap_rows=3)
 del sc_dat_tmp
+tmp_plt.plot()
 ```
 
 From first comparison it looks like the pearson method is better at making different cell profiles comparable with each other, all the while both methods preserve the relative expression levels between cycle phase groups.
@@ -1518,13 +1522,12 @@ frac_long = convert_to_long(frac_pred, clin_uf_pheno).drop(columns=["n_transfer_
 # write the t-testing function
 ttest_table = pd.DataFrame({
   celltype: {
-    "z_stat": ttest_ind(dat[dat["implantation"]]["ratio"], dat[~dat["implantation"]]["ratio"]).statistic,
-    "p-val": ttest_ind(dat[dat["implantation"]]["ratio"], dat[~dat["implantation"]]["ratio"]).pvalue,
+    "z_stat": ttest_ind(dat[dat["implantation"]]["ratio"], dat[dat["implantation"]==False]["ratio"]).statistic,
+    "p-val": ttest_ind(dat[dat["implantation"]]["ratio"], dat[dat["implantation"]==False]["ratio"]).pvalue,
   }
-  for celltype, dat in frac_long.groupby("celltype"):
-    dat[~dat["implantation"]]
+  for celltype, dat in frac_long.groupby("celltype")
 }).T
-# 
+
 ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
 
 ```
@@ -1767,7 +1770,6 @@ sns.scatterplot(x='PC1', y='PC2', hue='group', style="dataset", data=pca_df, pal
 
 ```
 
-
 ### UF
 
 ```{python}
@@ -1873,3 +1875,97 @@ sns.scatterplot(x='PC1', y='PC2', hue='group', style="dataset", data=pca_df, pal
 ```
 
 :::
+
+## How do UF and biopsy samples differ in deconvolution profiles
+
+Here we perform comparative analysis of the deconvolution profiles of UF and biopsy samples. 
+
+First lets perform statistical testing on the differences of all cell proportions between the same cycle group of UF and biopsy samples. We also have a sampleset of technical replicates from sample HUT71 in three repeats of biopsy and as a single UF sample.
+
+```{python}
+
+# Function to calculate statistics for each group
+def calculate_stats(group):
+  if len(group) == 2:
+    ratio_ns = group.iloc[0]
+    ratio_biopsy = group.iloc[1]
+    correlation, p_value = spearmanr(ratio_ns, ratio_biopsy)
+    mean_difference = np.abs(ratio_biopsy.mean() - ratio_ns.mean())
+    return pd.Series({'Correlation': correlation, 'P-value': p_value, 'Abs Mean Diff': mean_difference})
+  else:
+    return None
+
+# select out samples that have duplicated methods and correlate them
+results_df = (
+  frac_ccht_mat
+  .groupby( lambda x: re.match(r"(HUT\d+)", x).group(1) )
+  .apply(calculate_stats)
+  .reset_index(names="HUT")
+  )
+
+# Print the HTML table
+HTML(results_df.sort_values("HUT").to_html(index=False))
+
+```
+
+Then lets do a correlation matrix of paired samples with the EV samples on the Y axis and the biopsy samples on the X axis. We organise the samples in order with hierarchical clustering, so that more similar samples between sampling method are closer to each other.
+
+```{python}
+
+# run a corr matrix with itself
+corr_mat = (
+  frac_ccht_mat
+  # reorder the mat per cyclephase grouping
+  .reindex(ccht_uf_pheno.sort_values("cyclephase").index)
+  .T.corr(method="spearman")
+  # select out only cols with UF in columns and biopsy in rows
+  .filter(regex=r"UF", axis=0).filter(regex=r"biopsy", axis=1)
+  # reverse the rows to get mirrored image
+  .iloc[::-1]
+)
+
+# create a colormap for rows
+lut = dict(zip(
+  np.sort(ccht_uf_pheno.cyclephase.unique()),
+  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
+  ))
+
+row_colors = (
+  ccht_uf_pheno
+  .reindex(frac_ccht_mat.index.values) # double check
+  .cyclephase
+  .astype("object")
+  .map(lut)
+)
+
+gaps = ccht_uf_pheno.sort_values("cyclephase").cyclephase.value_counts(sort=False) / 2
+
+# Generate the heatmap
+plt.figure(figsize=(10, 8))
+ax = sns.heatmap(corr_mat, cmap='magma')
+# Color the y-axis labels
+for ylabel, xlabel in zip(ax.get_yticklabels(), ax.get_xticklabels()):
+  ylabel.set_color(row_colors[ylabel.get_text()])  # Convert label to integer
+  xlabel.set_color(row_colors[xlabel.get_text()])  # Convert label to integer
+# set gaps between groups - do it manually :(
+# Add vertical lines between x-axis groups
+plt.vlines(x=np.cumsum(gaps), ymin=0, ymax=len(corr_mat), color='white', linewidth=2)
+plt.hlines(y=np.cumsum(gaps[::-1]), xmin=0, xmax=len(corr_mat), color='white', linewidth=2)
+plt.title('Correlation Heatmap of Paired Samples Deconvolution Fractions')
+plt.show()
+
+```
+
+Finally, the heatmap of the difference of proportions per paired sample per celltype, showing only statistically signficiantly differing celltypes.
+
+```{python}
+
+
+```
+
+And a volcano plot too if were at it.
+
+```{python}
+
+
+```
