@@ -45,7 +45,7 @@ from matplotlib.patches import Patch
 from sklearn.preprocessing import normalize
 
 ## Do you want to rerun all the models?
-rerun_all = False
+rerun_all = True
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -118,7 +118,9 @@ sc_dat.obs = (
 
 ## exclude some celltypes, such as she hormones cell types
 ## also exclude the endometriosis samples
-the_condition = "celltype not in ['eHormones', 'sHormones', 'dHormones'] & Endometrial_pathology == 'C'"
+count_tmp = sc_dat.obs.celltype.value_counts()
+no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones', 'Immune_Lymphoid', 'Immune_Myeloid']
+the_condition = "celltype not in @no_go_celltype & celltype not in @sc_dat.var.index & Endometrial_pathology == 'C'"
 sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
 
 sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="pearson|pearson", n_HVGs=3000)
@@ -127,6 +129,8 @@ sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="pearson|pearson", n_HVGs=300
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
 
 ```
+
+We also excluded celltypes that have less than 100 cells represented, that includes `{python} print(no_go_celltype)`
 
 Load in the bulk data from the EV and biopsy samples
 
@@ -171,6 +175,10 @@ ccht_uf_pheno = (
   pd.read_table(Path(data_folder).expanduser() / "filtered" / "phenotype.tsv")
   .set_index("samplename")
   .query("samplename in @ccht_uf_raw.columns")
+  .assign(
+    cyclephase=lambda x: 
+      pd.Categorical(x.cyclephase, categories=["pro", "pre", "rec", "post"], ordered=True)
+    )
 )
 
 ## load in clinical samples
@@ -447,7 +455,8 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 500,
-  "max_single_cells": 8000,
+  # get a half of all the single ~ladies~ cells due to the size of the input dataset
+  "max_single_cells": round(len(sc_dat.obs.index) / 2),
   "ratio_num": 1,
   "gpu": 0
 }
@@ -1887,28 +1896,37 @@ First lets perform statistical testing on the differences of all cell proportion
 # Function to calculate statistics for each group
 def calculate_stats(group):
   if len(group) == 2:
-    ratio_ns = group.iloc[0]
+    ratio_uf = group.iloc[0]
     ratio_biopsy = group.iloc[1]
-    correlation, p_value = spearmanr(ratio_ns, ratio_biopsy)
-    mean_difference = np.abs(ratio_biopsy.mean() - ratio_ns.mean())
+    correlation, p_value = spearmanr(ratio_uf, ratio_biopsy)
+    mean_difference = np.abs(ratio_biopsy.mean() - ratio_uf.mean())
     return pd.Series({'Correlation': correlation, 'P-value': p_value, 'Abs Mean Diff': mean_difference})
   else:
     return None
+
+pheno_tmp = (
+  ccht_uf_pheno
+  .assign(HUT=lambda x: x.index.str.extract(r"(HUT\d+)", expand=False))
+  .filter(["HUT", "cyclephase"])
+  .drop_duplicates()
+  .set_index("HUT")
+  )
 
 # select out samples that have duplicated methods and correlate them
 results_df = (
   frac_ccht_mat
   .groupby( lambda x: re.match(r"(HUT\d+)", x).group(1) )
   .apply(calculate_stats)
+  .join(pheno_tmp, how="left")
   .reset_index(names="HUT")
   )
 
 # Print the HTML table
-HTML(results_df.sort_values("HUT").to_html(index=False))
+HTML(results_df.sort_values(["cyclephase", "Correlation"]).to_html(index=False))
 
 ```
 
-Then lets do a correlation matrix of paired samples with the EV samples on the Y axis and the biopsy samples on the X axis. We organise the samples in order with hierarchical clustering, so that more similar samples between sampling method are closer to each other.
+Then lets do a correlation matrix of paired samples with the EV samples on the Y axis and the biopsy samples on the X axis. We organise the samples in order with hierarchical clustering, so that more similar samples between sampling method are closer to each other. (add legend somehow)
 
 ```{python}
 
@@ -1916,8 +1934,9 @@ Then lets do a correlation matrix of paired samples with the EV samples on the Y
 corr_mat = (
   frac_ccht_mat
   # reorder the mat per cyclephase grouping
-  .reindex(ccht_uf_pheno.sort_values("cyclephase").index)
-  .T.corr(method="spearman")
+  .reindex(ccht_uf_pheno.sort_values(["cyclephase", "samplename"]).index)
+  .T
+  .corr(method="spearman")
   # select out only cols with UF in columns and biopsy in rows
   .filter(regex=r"UF", axis=0).filter(regex=r"biopsy", axis=1)
   # reverse the rows to get mirrored image
@@ -1956,12 +1975,57 @@ plt.show()
 
 ```
 
-Finally, the heatmap of the difference of proportions per paired sample per celltype, showing only statistically signficiantly differing celltypes.
+Finally, the heatmap of the difference of proportions per paired sample per celltype. The values are calculated from by "UF" - "biopsy", thus negative values represent overenrichment of biopsy ratios and vice versa.
+
+::: {.panel-tabset}
+
+### By cyclephase
 
 ```{python}
 
+# calculate absolute diff per celltype per paired sample
+results_df = (
+  frac_ccht_mat
+  .groupby(lambda x: re.match(r"(HUT\d+)", x).group(1))
+  .apply(lambda x: x.iloc[0] - x.iloc[1]) # [0] if UF, [1] is biopsy
+  # reorder the mat per cyclephase grouping
+  .reindex(pheno_tmp.sort_values(["cyclephase"]).index)
+  .T
+)
+
+col_cols = pheno_tmp.cyclephase.map(lut)
+
+# Generate the heatmap
+sns.clustermap(
+  results_df, 
+  cmap='coolwarm', 
+  col_colors=col_cols, 
+  figsize=(9, 18),
+  col_cluster=False,
+  dendrogram_ratio=(.2, 0),
+  cbar_pos=(.95, .45, .05, .2)
+  )
 
 ```
+
+### Clustered
+
+```{python}
+
+# Generate the heatmap
+sns.clustermap(
+  results_df, 
+  cmap='coolwarm', 
+  col_colors=col_cols, 
+  figsize=(9, 18),
+  col_cluster=True,
+  dendrogram_ratio=(.2, .1),
+  cbar_pos=(.95, .45, .05, .2)
+  )
+
+```
+
+### Volcano plot
 
 And a volcano plot too if were at it.
 
@@ -1969,3 +2033,5 @@ And a volcano plot too if were at it.
 
 
 ```
+
+:::
