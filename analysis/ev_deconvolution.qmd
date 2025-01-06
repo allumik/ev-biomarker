@@ -1,5 +1,5 @@
 ---
-title: "Single cell perspective into Extracellular Vesicules"
+title: "Single cell deconvolution into Extracellular Vesicules"
 format:
   html:
     code-fold: true
@@ -69,6 +69,15 @@ replace_dict = {
   "Proliferative Disordered": "EP"
 }
 
+replace_immu = {
+  "Lymphatic": ["uNK1", "uNK1_cycling", "uNK2", "uNK3", "ILC3", "Peripheral_lymphocyte", "Lymphatic", "Immune_Lymphoid"],
+  "Myeloid": ["eM1", "eM2", "cDC1", "cDC2", "pDC", "Monocyte", "Immune_Myeloid"],
+  "B-cells": ["B_cell", "Plasma_B_cell"],
+  "T-cells": ["T_Reg", "T_cell_CD8", "T_cell_CD4", "T_cell_cycling"]
+}
+inv_replace_immu = {value: key for key, values in replace_immu.items() for value in values}
+
+
 ```
 
 Preprocessing for the HECA dataset:
@@ -102,9 +111,8 @@ sc_dat.obs = (
       .mask(
         x.index.isin(sc_dat_immu.obs.celltype.index), 
         sc_dat_immu.obs.celltype.astype("object")
-      )
-      .astype("category"),
-    label_long=lambda x: 
+      ),
+    label_long=lambda x:
       x.label_long
       .astype("object")
       .mask(
@@ -114,14 +122,18 @@ sc_dat.obs = (
       .astype("category")
   )
   .rename(columns={"sample": "samplename"})
+  # now generalise the cell types for better deconvolution classes
+  .assign(celltype=lambda x: x.celltype.replace(inv_replace_immu).astype("category"))
 )
 
-## exclude some celltypes, such as she hormones cell types
 ## also exclude the endometriosis samples
+the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
+sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].to_memory()
+
+## exclude some celltypes, such as she hormones cell types and poorly represented samples
 count_tmp = sc_dat.obs.celltype.value_counts()
-no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones', 'Immune_Lymphoid', 'Immune_Myeloid']
-the_condition = "celltype not in @no_go_celltype & celltype not in @sc_dat.var.index & Endometrial_pathology == 'C'"
-sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
+no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
+sc_dat = sc_dat[sc_dat.obs.query("celltype not in @no_go_celltype").index, :]
 
 sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="pearson|pearson", n_HVGs=3000)
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
@@ -199,245 +211,6 @@ clin_uf_raw = clin_uf_raw.loc[:, clin_uf_pheno.index]
 
 ```
 
-# General stats
-
-Check out the number of cells in each dataset with the origin of the cell.
-
-```{python}
-sns.displot(sc_dat.obs, x="dataset", hue="Stage", multiple="stack").set_xticklabels(rotation=90)
-```
-
-Or just comparison between celltypes in different HECA datasets
-
-```{python}
-g = sns.displot(sc_dat.obs, x="dataset", hue="celltype", multiple="stack").set_xticklabels(rotation=90)
-sns.move_legend(g, "center right", fancybox=True, ncol=2, bbox_to_anchor=(1.25,0.5))
-```
-
-How many different classes of biopsy types there are in the whole dataset?
-
-```{python}
-sns.displot(
-  sc_dat.obs[["samplename", "Biopsy_type"]].drop_duplicates(),
-  x="Biopsy_type"
-  ).set_xticklabels(rotation=90)
-```
-
-# Biomarker expression through cyclephases in scRNA-seq
-
-Here we first subset the single-cell atlas per following criteria:
-
-* We filter out samples with "Whole Uterus" biopsy type
-* Filter out celltypes marked as "dHormones", "eHormones" and "sHormones"
-
-For gene comparison, we use the normalised counts from the scRNA-seq HECA dataset. These counts are normalised via Pearson residuals-based variance-stabilizing transformation [related article](https://www.nature.com/articles/s41592-023-01814-1#MOESM3).
-
-Following this, well look at all the different cycle phases that are also represented in the UF dataset:
-
-* EP or Early-Proliferative as "pro"/"Proliferative"
-* LP or Late-Proliferative as "pro"/"Proliferative"
-* ES or Early-Secretory as "pre"/"Pre-receptive"
-* MS or Mid-Secretory as "rec"/"Receptive"
-* LS or Late-Secretory as "post"/"Post-receptive"
-
-```{python}
-## define a function for the data extraction
-def gene_x_sample_view(
-  sc_dat_obj, 
-  gene_list=["TBX15", "ERICH3", "SNTN", "WDR38", "CD33", "COL9A1", "IDHA1", "SPDEF", "CDKN2A"],
-  cols_of_interest={"index", "Age", "lineage", "celltype"}
-  ):
-  ## read in the genelist and select the genes in sc_dat_obj
-  sc_dat_obj = sc_dat_obj[:, sc_dat_obj.var.index.isin(gene_list)].to_memory()
-  ## and merge with the obs table and pivot the gene table
-  return (
-    sc_dat_obj.obs.join(
-      pd.DataFrame(
-        sc_dat_obj.X.toarray(),
-        index=sc_dat_obj.obs.index,
-        columns=sc_dat_obj.var.index
-      ),
-      how="left"
-    )
-    .reset_index()
-    .melt(
-      id_vars=cols_of_interest, 
-      value_vars=set(sc_dat_obj.var.index),
-      var_name="gene_id",
-      value_name="norm_expr"
-      )
-    .set_index("index")
-  )
-
-
-## create a plotting function for gene lists
-def plot_gene_list(
-  sc_dat, 
-  gene_list, 
-  wrap_rows=3,
-  cycle_filt=["EP", "ES", "MS", "LS"],
-  biopsy_type_filt=["Whole_Uterus"]
-  ):
-  sc_obs_tmp = gene_x_sample_view(
-      sc_dat[
-        sc_dat.obs
-          .query("Biopsy_type not in @biopsy_type_filt & cyclephase in @cycle_filt")
-          .index
-      ],
-      gene_list=gene_list,
-      cols_of_interest={"index", "lineage", "celltype", "cyclephase"}
-    ).assign(cyclephase=lambda x:
-        x.cyclephase.astype("str").astype("category").cat.reorder_categories(cycle_filt, ordered=True)
-    )
-
-  ## precalculate stat
-  return (
-    so.Plot(
-      (
-        sc_obs_tmp
-        .groupby(["gene_id", "cyclephase", "lineage"])
-        .agg({"norm_expr": ['mean', 'min', 'max', 'sem']})
-        .droplevel(0, axis=1)
-        .reset_index()
-        .assign(se_min=lambda x: x["mean"] - x["sem"], se_max=lambda x: x["mean"] + x["sem"])
-      ),
-      x="cyclephase",
-      y="mean",
-      ymin="se_min",
-      ymax="se_max",
-      color="lineage"
-    )
-    # .layout(size=(9,12))
-    .add(so.Line())
-    .add(so.Band(alpha=.2))
-    .facet(None, "gene_id", wrap=wrap_rows)
-    .share(y=False)
-    .theme(sns.axes_style("white") | sns.plotting_context("notebook"))
-  )
-
-```
-
-::: {.panel-tabset}
-
-## Implantation DE
-
-First lets look at the expression changes of **implantation or implantation failure DE genes** throughout the menstrual cycle for every major cell typ.
-
-```{python}
-plot_gene_list(sc_dat, clin_de_genes, wrap_rows=11)
-```
-
-## ESCRT-0
-
-Then, we have ESCRT-0 complex markers to investigate: HGS, STAM, STAM2
-
-```{python}
-gene_selection=["HGS", "STAM", "STAM2"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-## ESCRT-I
-
-ESCRT-I complex markers: MVB12A,MVB12B,TSG101,UBAP1,VPS28,VPS37A,VPS37B,VPS37C,VPS37D
-
-```{python}
-gene_selection=["MVB12A", "MVB12B", "TSG101", "UBAP1", "VPS28", "VPS37A", "VPS37B", "VPS37C", "VPS37D"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
-```
-
-## ESCRT-II
-
-ESCRT-II complex markers: SNF8, VPS25, VPS36
-
-```{python}
-gene_selection=["SNF8", "VPS25", "VPS36"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-## ESCRT-III
-
-ESCRT-III complex markers: CHMP2A, CHMP2B, CHMP3, CHMP4A, CHMP4B, CHMP4C, CHMP6
-
-```{python}
-gene_selection=["CHMP2A", "CHMP2B", "CHMP3", "CHMP4A", "CHMP4B", "CHMP4C", "CHMP6"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
-```
-
-## ESCRT-IV
-
-ESCRT-III complex markers: VPS4A,VPS4B,VTA1
-
-```{python}
-gene_selection=["VPS4A","VPS4B","VTA1"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-## ESCRT-independent
-
-ESCRT-independent EV-associated markers: RAB31, SMPD3 (nSMASE2)
-
-```{python}
-# sc_dat.var.index[sc_dat.var.index.str.contains("SMPD")]
-gene_selection=["RAB31", "SMPD3"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-## EV release gene markers
-
-Variations of RAB27, RAB11, RAB3, RAB7
-
-```{python}
-# sc_dat.var.index[sc_dat.var.index.str.contains("RAB")]
-gene_selection=["RAB27A", "RAB27B", "RAB11A", "RAB11B"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-```{python}
-gene_selection=["RAB3A", "RAB3B", "RAB3C", "RAB3D", "RAB7A", "RAB7B"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=3)
-```
-
-## Tetraspanins
-
-Tetraspanins and other cargo markers: CD9, CD63, CD81, ALIX, SDCBP
-
-```{python}
-gene_selection=["CD9", "CD63", "CD81", "ALIX", "SDCBP"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-## Accessory
-
-Accessory markers PDCD6IP, SDCBP (syntenin-1), SDC (syndecan)
-
-```{python}
-gene_selection=["PDCD6IP", "SDCBP", "SDC1", "SDC2", "SDC3", "SDC4"]
-plot_gene_list(sc_dat, gene_selection, wrap_rows=2)
-```
-
-## log-shift - ESCRT-III
-
-For comparison, here we transform the matrix with a simple shifted log-tranformation and see how the reads for the ESCRT 3 complex look in comparison.
-
-```{python}
-## switch the expression matrix to raw counts if the matrix is preprocessed
-sc_dat_tmp = sc_dat.copy()
-sc_dat_tmp.X = sc_dat_tmp.layers["counts"]
-del sc_dat_tmp.layers["counts"]
-sc_dat_tmp = ov.pp.preprocess(sc_dat_tmp, mode="shiftlog|pearson", n_HVGs=3000, target_sum=50*1e4)
-```
-
-```{python}
-gene_selection=["CHMP2A", "CHMP2B", "CHMP3", "CHMP4A", "CHMP4B", "CHMP4C", "CHMP6"]
-tmp_plt = plot_gene_list(sc_dat_tmp, gene_selection, wrap_rows=3)
-del sc_dat_tmp
-tmp_plt.plot()
-```
-
-From first comparison it looks like the pearson method is better at making different cell profiles comparable with each other, all the while both methods preserve the relative expression levels between cycle phase groups.
-
-:::
-
 # Single cell deconvolution and projection
 
 We'd be interested in using scRNA-seq atlas to deconvolve the EV data. This helps us understand where are those EV produced and which tissue signal they are capturing. To run single cell and projection, we are gonna use [TAPE](https://www.nature.com/articles/s41467-022-34550-9) algorithm.
@@ -454,7 +227,7 @@ del sc_dat.layers["counts"]
 
 model_params = {
   "celltype_key": "celltype",
-  "top_marker_num": 500,
+  "top_marker_num": 250, # reduce it from the default parameter of 500
   # get a half of all the single ~ladies~ cells due to the size of the input dataset
   "max_single_cells": round(len(sc_dat.obs.index) / 2),
   "ratio_num": 1,
@@ -468,6 +241,8 @@ frac_params = {
   "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
 }
+
+fractions_folder = Path(data_folder) / "tape_fractions"
 
 ```
 
@@ -660,7 +435,6 @@ def cor_table(fracs_long) -> pd.DataFrame:
 ## All samples
 
 ```{python}
-fractions_folder = Path(data_folder) / "tape_fractions"
 fractions_file = fractions_folder / "comb_fracs.tsv"
 if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
@@ -671,7 +445,7 @@ else:
     **model_params
   )
   frac_pred = model_obj.predicted_fraction(**frac_params)
-  frac_pred.to_csv(fractions_file, sep = "\t")
+  frac_pred.to_csv(fractions_file, sep="\t")
 
 general_cells = (
   sc_dat.obs
@@ -693,6 +467,27 @@ dendro_barplot(
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
+
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    frac_pred
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  comb_uf_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
+  )
+
 ```
 
 Apply PCA on the proportions.
@@ -797,6 +592,27 @@ dendro_barplot(
   legend_class_ncol=3
   )
 
+
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    frac_tmp
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  comb_uf_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
+  )
+
 ```
 
 Apply PCA on the proportions.
@@ -888,40 +704,6 @@ The deconvolution results of both biopsy and UF samples as an heatmap:
 frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index]
 ```
 
-```{python}
-
-# create a colormap
-lut = dict(zip(
-  general_cells.lineage.unique(),
-  sns.color_palette("Set2", general_cells.lineage.unique().size).as_hex()
-  ))
-
-col_colors = general_cells.lineage.astype("object").map(lut)
-
-# create a colormap
-lut = dict(zip(
-  comb_uf_pheno.cyclephase.unique(),
-  sns.color_palette("Set2", comb_uf_pheno.cyclephase.unique().size).as_hex()
-  ))
-
-row_colors = comb_uf_pheno.reindex(
-  comb_uf_pheno.query("group == 'biopsy'").index.values
-  ).cyclephase.astype("object").map(lut)
-
-dash_bio.Clustergram(
-  data=frac_tmp,
-  column_labels=list(frac_tmp.columns.values),
-  column_colors=list(col_colors),
-  row_labels=list(frac_tmp.index),
-  row_colors=list(row_colors),
-  # hidden_labels="col",
-  height=1500,
-  width=900,
-  display_ratio=[0.1, 0.2]
-)
-
-```
-
 As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
@@ -933,6 +715,27 @@ dendro_barplot(
   legend_class_bbox=(1.05, -0.2),
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
+  )
+
+
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    frac_tmp
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  comb_uf_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
   )
 
 ```
@@ -1008,6 +811,9 @@ general_cells = (
   .reindex(frac_pred.columns.values)
 )
 
+# save it for later
+ccht_pred = frac_pred.copy()
+
 ```
 
 As the proportions still add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
@@ -1021,6 +827,27 @@ dendro_barplot(
   legend_class_bbox=(1.05, 0.1),
   legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
+  )
+
+
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    frac_pred
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  ccht_uf_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
   )
 
 ```
@@ -1129,6 +956,26 @@ dendro_barplot(
   legend_class_ncol=3
   )
 
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    frac_tmp
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  ccht_uf_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
+  )
+
 ```
 
 Apply PCA on the proportions.
@@ -1231,6 +1078,27 @@ dendro_barplot(
   legend_class_bbox=(1.05, .1),
   legend_phase_ncol=ccht_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
+  )
+
+
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    frac_tmp
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  ccht_uf_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
   )
 
 ```
@@ -2035,3 +1903,78 @@ And a volcano plot too if were at it.
 ```
 
 :::
+
+## Do cell types in reference data correlate with deconvolution?
+
+Here we compare how do the raw single cell data cell ratios compare to the CCHT biopsy sample deconvolution results. This helps us have some common sense on the imputed ratios and evaluate the efficiency of the model.
+
+First lets look at clustered barplots of both sc cell ratios and deconvolution ratios for all the CCHT biopsy samples and for all samples in HECA.
+
+```{python}
+
+# get the cell fractions
+ccht_tmp = ccht_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index]
+sc_tmp = sc_dat.obs.query("cyclephase not in ['Hormones (Proliferative Early)', 'Hormones']")
+sc_fracs = (
+  sc_tmp
+  .groupby("samplename")
+  .celltype
+  .value_counts(normalize=True)
+  .unstack()
+)
+# remove 0 rows
+sc_fracs = sc_fracs.loc[(sc_fracs != 0).any(axis=1)]
+# join the tables
+join_props = pd.concat([ccht_tmp, sc_fracs])
+
+# create a new phenotype table for the joined table
+sc_pheno = (
+  sc_tmp[["samplename", "cyclephase"]]
+  .query("cyclephase not in ['Hormones (Proliferative Early)', 'Hormones']")
+  .drop_duplicates(ignore_index=True)
+  .assign(group="sc", dataset="HECA")
+  .set_index("samplename")
+)
+join_pheno = pd.concat(
+  [
+    ccht_uf_pheno
+    .query("group == 'biopsy'")
+    .replace({"post": "LS", "pro": "Proliferative", "pre": "ES", "rec": "MS"}),
+    sc_pheno
+  ]
+)
+
+# plot it
+dendro_barplot(
+  join_props,
+  join_pheno,
+  legend_phase_bbox=(1.05, 0.1),
+  legend_class_bbox=(1.05, 0.1),
+  legend_phase_ncol=join_pheno.cyclephase.unique().size,
+  legend_class_ncol=3
+  )
+
+# do a summarised lineage plot
+dendro_barplot(
+  (
+    join_props
+    .melt(var_name="celltype", value_name="props", ignore_index=False)
+    .reset_index(names="samplenames")
+    .merge(general_cells, on="celltype")
+    .groupby(["lineage", "samplenames"])
+    ["props"]
+    .agg(sum)
+    .reset_index()
+    .pivot(index="samplenames", columns="lineage", values="props")
+  ),
+  join_pheno,
+  legend_phase_bbox=(1.02, .5),
+  legend_class_bbox=(1.02, .5),
+  legend_phase_ncol=1,
+  legend_class_ncol=1
+  )
+
+
+```
+
+Then lets separate those ratios per cycle group and see how do they differ between reference and imputation.

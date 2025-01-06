@@ -68,6 +68,14 @@ replace_dict = {
   "Proliferative Disordered": "EP"
 }
 
+replace_immu = {
+  "Lymphatic": ["uNK1", "uNK1_cycling", "uNK2", "uNK3", "ILC3", "Peripheral_lymphocyte", "Lymphatic", "Immune_Lymphoid"],
+  "Myeloid": ["eM1", "eM2", "cDC1", "cDC2", "pDC", "Monocyte", "Immune_Myeloid"],
+  "B-cells": ["B_cell", "Plasma_B_cell"],
+  "T-cells": ["T_Reg", "T_cell_CD8", "T_cell_CD4", "T_cell_cycling"]
+}
+inv_replace_immu = {value: key for key, values in replace_immu.items() for value in values}
+
 ```
 
 Load in the data, filter out "Hormones" celltypes and non-endometriotic samples and finally do some preprocessing:
@@ -100,8 +108,7 @@ sc_dat.obs = (
       .mask(
         x.index.isin(sc_dat_immu.obs.celltype.index), 
         sc_dat_immu.obs.celltype.astype("object")
-      )
-      .astype("category"),
+      ),
     label_long=lambda x: 
       x.label_long
       .astype("object")
@@ -112,15 +119,20 @@ sc_dat.obs = (
       .astype("category")
   )
   .rename(columns={"sample": "samplename"})
+  # now generalise the cell types for better deconvolution classes
+  .assign(celltype=lambda x: x.celltype.replace(inv_replace_immu).astype("category"))
 )
 
-## exclude some celltypes, such as she hormones cell types
-## also exclude cell types that have too few cells to begin with
+
 ## also exclude the endometriosis samples
+the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
+sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].to_memory()
+
+## exclude some celltypes, such as she hormones cell types and poorly represented samples
 count_tmp = sc_dat.obs.celltype.value_counts()
 no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
-the_condition = "celltype not in @no_go_celltype & celltype not in @sc_dat.var.index & Endometrial_pathology == 'C'"
-sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :]
+sc_dat = sc_dat[sc_dat.obs.query("celltype not in @no_go_celltype").index, :]
+
 
 sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
@@ -176,7 +188,7 @@ del sc_dat.layers["counts"]
 
 model_params = {
   "celltype_key": "celltype",
-  "top_marker_num": 500,
+  "top_marker_num": 150,
   "max_single_cells": round(len(sc_dat.obs.index) / 2),
   # "max_single_cells": 8000, # increase the single cell count for sampling
   "ratio_num": 1, # might solve some of the artifact problems
@@ -376,7 +388,7 @@ Next, we try out the classical spatial deconvolution method `Tangram` to integra
 def plotter_spat(gen_data, vis_data, ct_group):
   cts = ( # avoid some errors from celltypes having same name as genes
     gen_data.obs
-    .query("(lineage==@ct_group) & celltype not in @vis_data.var.index")
+    .query("(lineage==@ct_group) & celltype not in @vis_data.var.index & celltype in @vis_data.obs.columns")
     .celltype
     .unique()
   )
@@ -466,7 +478,7 @@ Visualise the results
 
 ::: {.panel-tabset}
 
-### Mesenchymal 
+### Mesenchymal
 ```{python}
 plotter_spat(gen_ccht_bio, vis_dat_proj, "Mesenchymal")
 ```
