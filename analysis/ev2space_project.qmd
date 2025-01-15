@@ -123,10 +123,12 @@ sc_dat.obs = (
   .assign(celltype=lambda x: x.celltype.replace(inv_replace_immu).astype("category"))
 )
 
+# load the object into memory for the double indexing that is going to happen
+sc_dat = sc_dat.to_memory()
 
 ## also exclude the endometriosis samples
 the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
-sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].to_memory()
+sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].copy() # have to copy to "deview" it
 
 ## exclude some celltypes, such as she hormones cell types and poorly represented samples
 count_tmp = sc_dat.obs.celltype.value_counts()
@@ -189,7 +191,7 @@ del sc_dat.layers["counts"]
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 150,
-  "max_single_cells": round(len(sc_dat.obs.index) / 2),
+  "max_single_cells": round(len(sc_dat.obs.index) / 8),
   # "max_single_cells": 8000, # increase the single cell count for sampling
   "ratio_num": 1, # might solve some of the artifact problems
   "gpu": 0
@@ -197,7 +199,7 @@ model_params = {
 
 frac_params = {
   "batch_size": 512,
-  "epochs": 2500, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
+  "epochs": 50, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
   "scaler": "ss", # seems to harmonise distributions better
   "method": "tape",
   "mode": "high-resolution"
@@ -206,7 +208,7 @@ frac_params = {
 vae_params = {
   "batch_size": 512,
   "hidden_size": 256,
-  "epoch_num": 2500 # looking at loss plot then 500 seems to be already enough
+  "epoch_num": 50 # looking at loss plot then 500 seems to be already enough
 }
 
 ```
@@ -228,7 +230,7 @@ else:
     single_data=sc_dat.to_memory(),
     **model_params
   )
-  # you have to run this to set the model_obj.cell_target_sum  
+  # you have to run this to set the model_obj.cell_target_sum
   # and not run the single_preprocess_lazy() as it seems to override cell_num attribute and does needless normalisation
   _ = model_obj.predicted_fraction(**frac_params)
   model_obj.bulk_preprocess_lazy()
@@ -240,10 +242,16 @@ else:
     **vae_params
     )
   gen_ccht_ev = model_obj.generate()
-  gen_ccht_ev.obs = gen_ccht_ev.obs.join(
-    sc_dat.obs[["celltype", "lineage"]].drop_duplicates().set_index("celltype"), 
-    on="celltype"
+  gen_ccht_ev.obs = (
+    gen_ccht_ev.obs
+    .join(
+      sc_dat.obs[["celltype", "lineage"]].drop_duplicates(keep="first").set_index("celltype"),
+      on="celltype"
     )
+    # and now fix the join bc pandas does not seem to understand what "left join" means
+    .reset_index(names="barcodes")
+    .drop_duplicates(subset="barcodes", keep="first")
+  ).set_index("barcodes")
   gen_ccht_ev.write(gen_sc_file)
   del model_obj
 
@@ -313,10 +321,16 @@ else:
     **vae_params
     )
   gen_ccht_bio = model_obj.generate()
-  gen_ccht_bio.obs = gen_ccht_bio.obs.join(
-    sc_dat.obs[["celltype", "lineage"]].drop_duplicates().set_index("celltype"),
-    on="celltype"
+  gen_ccht_bio.obs = (
+    gen_ccht_bio.obs
+    .join(
+      sc_dat.obs[["celltype", "lineage"]].drop_duplicates(keep="first").set_index("celltype"),
+      on="celltype"
     )
+    # and now fix the join bc pandas does not seem to understand what "left join" means
+    .reset_index(names="barcodes")
+    .drop_duplicates(subset="barcodes", keep="first")
+  ).set_index("barcodes")
   gen_ccht_bio.write(gen_sc_file)
   del model_obj
 

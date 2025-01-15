@@ -229,7 +229,7 @@ model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 250, # reduce it from the default parameter of 500
   # get a half of all the single ~ladies~ cells due to the size of the input dataset
-  "max_single_cells": round(len(sc_dat.obs.index) / 2),
+  "max_single_cells": round(len(sc_dat.obs.index) / 8),
   "ratio_num": 1,
   "gpu": 0
 }
