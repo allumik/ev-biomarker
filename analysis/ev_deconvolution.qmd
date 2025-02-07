@@ -37,6 +37,7 @@ from scipy.stats import ttest_ind
 from scipy.stats import spearmanr
 from scipy.stats import f_oneway
 from scipy.stats import tukey_hsd
+from scipy.stats import chi2
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
@@ -44,8 +45,11 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 from sklearn.preprocessing import normalize
 
+## import the functions used in this report (got too long to include them in the report)
+import deconvo_functions as funk
+
 ## Do you want to rerun all the models?
-rerun_all = True
+rerun_all = False
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -152,6 +156,11 @@ Load in the bulk data from the EV and biopsy samples
 comb_uf_mat = pd.read_feather(Path(data_folder).expanduser() / "combined" / "comb_uf_tpm.feather").set_index("gene_id").iloc[:-1]
 comb_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "combined" / "comb_uf_pheno.tsv").set_index("samplename")
 comb_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "combined" / "comb_uf.feather").set_index("gene_id").iloc[:-1]
+## filter out some samples
+terminator = ["HUT26_UF", "HUT26_biopsy"]
+comb_uf_pheno = comb_uf_pheno.query("samplename not in @terminator")
+comb_uf_mat = comb_uf_mat.drop(columns=terminator)
+comb_uf_raw = comb_uf_raw.drop(columns=terminator)
 ## and reformat and join the data into long data (for better visuals)
 comb_uf = (
   comb_uf_mat
@@ -192,6 +201,9 @@ ccht_uf_pheno = (
       pd.Categorical(x.cyclephase, categories=["pro", "pre", "rec", "post"], ordered=True)
     )
 )
+terminator = ["HUT26_UF", "HUT17_UF", "HUT53_UF", "HUT71_UF"]
+ccht_uf_pheno = ccht_uf_pheno.query("samplename not in @terminator")
+ccht_uf_raw = ccht_uf_raw.drop(columns=terminator)
 
 ## load in clinical samples
 clin_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "clin_counts_raw.feather").iloc[:-1]
@@ -236,7 +248,7 @@ model_params = {
 
 frac_params = {
   "batch_size": 512,
-  "epochs": 2500, # looking at loss plot then 500 seems to be already enough
+  "epochs": 1000, # looking at loss plot then 500 seems to be already enough
   "method": "tape",
   "scaler": "ss", # seems to harmonise distributions better
   "mode": "high-resolution"
@@ -246,195 +258,12 @@ fractions_folder = Path(data_folder) / "tape_fractions"
 
 ```
 
-```{python}
-
-# the plotting function for the dendrogram on barplot
-def dendro_barplot(
-  fractions,
-  pheno_dat,
-  legend_phase_bbox=(1, .3),
-  legend_class_bbox=(1, .3),
-  legend_phase_ncol=1,
-  legend_class_ncol=1,
-  pheno_dat_col="cyclephase"
-  ):
-  frac_pred_index = fractions.index
-
-  # create a colormap for rows
-  lut_row = dict(zip(
-    pheno_dat[pheno_dat_col].unique(),
-    sns.color_palette("Set2", pheno_dat[pheno_dat_col].unique().size).as_hex()
-    ))
-  row_colors = (
-    pheno_dat
-    .reindex(frac_pred_index.values)
-    [pheno_dat_col]
-    .astype("object")
-    .map(lut_row)
-  )
-
-  # the image part
-  fig = plt.figure(figsize=(12, 10))
-  gs = GridSpec(2, 1, height_ratios=[1, 3], hspace=0.05)
-  ax_dendro = fig.add_subplot(gs[0])
-  ax_bar = fig.add_subplot(gs[1])
-
-  linkage_mat = linkage(fractions.loc[frac_pred_index], method="complete", optimal_ordering=True)
-  dend_obj = dendrogram(
-    linkage_mat,
-    labels=pheno_dat[pheno_dat_col][frac_pred_index].index, 
-    color_threshold=0,
-    above_threshold_color="#000000",
-    ax=ax_dendro
-    )
-  ax_dendro.set_title('TAPE deconvolution results')
-  # Minimal theme for the dendrogram
-  for spine in ax_dendro.spines.keys(): ax_dendro.spines[spine].set_visible(False)
-  ax_dendro.tick_params(left=False, bottom=False)
-  ax_dendro.set_xticks([])
-  ax_dendro.set_yticks([])
-
-  # and the barplot part
-  fractions.iloc[dend_obj["leaves"]].plot(kind='bar', stacked=True, figsize=(12, 6), ax=ax_bar)
-  ax_bar.set_xlabel('Sample')
-  ax_bar.set_ylabel('Cell Fraction')
-  # color the samplenames
-  for label in ax_bar.get_xmajorticklabels():
-    label.set_color(row_colors.to_dict()[label.get_text()])
-  # Align the x-ticks with the dendrogram
-  ax_bar.set_xticklabels(ax_bar.get_xticklabels(), rotation=90)
-  for spine in ax_bar.spines.keys(): 
-    ax_bar.spines[spine].set_visible(False)
-  ax_bar.grid(False)
-  ax_bar.set_xticklabels(ax_bar.get_xticklabels(), rotation=90, fontsize=10)  # Change fontsize to 8
-
-  # Legend for sample name colors
-  legend_elements_phases = [
-    Patch(facecolor=color, edgecolor='black', label=phase) for phase, color in lut_row.items()
-    ]
-  legend_phases = ax_bar.legend(
-    handles=legend_elements_phases, 
-    title=pheno_dat_col, 
-    bbox_to_anchor=legend_phase_bbox, 
-    loc='upper left', 
-    ncol=legend_phase_ncol
-    )
-
-  # Legend for bar colors (classes)
-  handles, labels = ax_bar.get_legend_handles_labels()
-  legend_classes = ax_bar.legend(
-    handles=handles, 
-    labels=labels, 
-    title='Cell Types', 
-    bbox_to_anchor=legend_class_bbox, 
-    loc='lower left', 
-    ncol=legend_class_ncol
-    )
-
-  # Add both legends to the plot
-  ax_bar.add_artist(legend_phases)
-  plt.show()
-
-```
-
-```{python}
-
-def biplot_fractions(frac_obj, pheno, legend_title="Cycle Phase", kwargs={}):
-  ## don't scale as the counts are props anyways
-  pca = PCA(n_components=2)
-  pca_df = (
-    pd.DataFrame(data=pca.fit_transform(frac_obj), columns=["PC1", "PC2"])
-    .set_index(frac_obj.index)
-    .merge(pheno, left_index=True, right_index=True)
-  )
-  expl_var = pca.explained_variance_ratio_
-  loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-  # Visualize the PCA results
-  plt.figure(figsize=(8, 6))
-  sns.scatterplot(x='PC1', y='PC2', data=pca_df, **kwargs)
-
-  # Plot the loadings as a biplot
-  for i, feature in enumerate(frac_obj): 
-    plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-    # write only signf loadings
-    if loadings[i, 0] > 0.01 or loadings[i, 1] > 0.01:
-      plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-  plt.title('PCA Result')
-  plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-  plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-  plt.legend(title=legend_title, loc="upper left", bbox_to_anchor=(1.05, 1))
-  plt.grid(False)
-  # Major grid only
-  plt.axhline(0, color="lightgray", linewidth=1)
-  plt.axvline(0, color="lightgray", linewidth=1)
-  plt.show()
-
-```
-
-```{python}
-
-def convert_to_long(fracs, pheno) -> pd.DataFrame:
-  # convert to long format
-  return (
-    fracs
-      .reset_index(names="index")
-      .melt(id_vars="index", var_name="celltype", value_name="ratio")
-      .set_index("index")
-      .merge(pheno, left_index=True, right_index=True)
-  )
-
-# Perform one-way ANOVA and Tukey's test as a function for grouping
-def pairwise_tukey_df(dat) -> pd.DataFrame:
-  tukey_res = pairwise_tukeyhsd(
-      dat["ratio"],
-      dat["cyclephase"],
-    )._results_table
-  return pd.DataFrame(
-    data=tukey_res.data[1:],
-    columns=tukey_res.data[0]
-  )
-
-def tukey_table(fracs_long) -> pd.DataFrame:
-  tukey_res = {
-    celltype:
-      pairwise_tukey_df(dat)
-    for celltype, dat in fracs_long.groupby("celltype")
-  }
-  return pd.concat(
-    tukey_res, keys=tukey_res.keys(), names=["celltype"]
-    ).reset_index(level='celltype')
-
-def anova_table(fracs_long) -> pd.DataFrame:
-  anova_res = {
-    celltype:
-      f_oneway(*[dat.query("cyclephase == @cycle")["ratio"] for cycle in dat.cyclephase.unique()])
-    for celltype, dat in fracs_long.groupby("celltype")
-  }
-  return pd.DataFrame(anova_res).T.set_axis(["f-stat", "p-val"], axis=1)
-
-def cor_table(fracs_long) -> pd.DataFrame:
-  # convert the cyclephase to a dummy var
-  fracs_long["dummy_phase"] = pd.Categorical(
-    fracs_long.cyclephase,
-    categories=["pre", "pro", "rec", "post"],
-    ordered=True
-    ).codes
-  cor_res = {
-    celltype:
-      spearmanr(dat["dummy_phase"], dat["ratio"])
-    for celltype, dat in fracs_long.groupby("celltype")
-  }
-  return pd.DataFrame(cor_res).T.set_axis(["corr", "p-val"], axis=1)
-
-```
-
 ::: {.panel-tabset}
 
 ## All samples
 
 ```{python}
+
 fractions_file = fractions_folder / "comb_fracs.tsv"
 if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
@@ -454,12 +283,14 @@ general_cells = (
   .set_index("celltype", drop=True)
   .reindex(frac_pred.columns.values)
 )
+
 ```
 
 As the proportions add up to one, we can also generate a stacked barplot for the cell proportions per cell type over all the samples.
 
 ```{python}
-dendro_barplot(
+
+funk.dendro_barplot(
   frac_pred,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
@@ -469,7 +300,7 @@ dendro_barplot(
   )
 
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     frac_pred
     .melt(var_name="celltype", value_name="props", ignore_index=False)
@@ -493,7 +324,9 @@ dendro_barplot(
 Apply PCA on the proportions.
 
 ```{python}
+
 biplot_fractions(frac_pred, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
+
 ```
 
 Or **by major cell types**:
@@ -1414,23 +1247,6 @@ ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
 # Cross-comparisons
 
 ```{python}
-from scipy.stats import chi2
-
-def mahalanobis_distances(x, refs):
-  cov_val = np.cov(refs)
-  inv_cov = 1 / cov_val
-  diff = x - np.mean(refs)
-  mahal = np.sqrt(diff**2 * inv_cov)
-  return mahal
-
-# Function to calculate geometric mean, ignoring NaN and non-positive values
-def geometric_mean(row):
-    valid_values = row[(row > 0) & (abs(row) < np.inf)].dropna()
-    if len(valid_values) > 0:
-        return np.exp(np.log(valid_values).mean())
-    else:
-        return np.nan
-
 ```
 
 ## How do the clinical samples correlate with different cycle phase samples?

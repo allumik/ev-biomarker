@@ -144,6 +144,10 @@ sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=30
 ## load in the EV CCHT only data and drop the "none" gene id in the end
 ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "filtered" / "annot_raw.feather").set_index("gene_id").iloc[:-1]
 ccht_uf_pheno = pd.read_table(Path(data_folder).expanduser() / "filtered" / "phenotype.tsv").set_index("samplename")
+## Filter out some samples that are not behaving very well...
+terminator = ["HUT26_UF", "HUT26_biopsy"]
+ccht_uf_pheno = ccht_uf_pheno.query("samplename not in @terminator")
+ccht_uf_raw = ccht_uf_raw.drop(columns=terminator)
 
 ```
 
@@ -199,7 +203,7 @@ model_params = {
 
 frac_params = {
   "batch_size": 512,
-  "epochs": 50, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
+  "epochs": 1000, # looking at loss plot then 500 seems to be already enough, and we don't need the fractions really
   "scaler": "ss", # seems to harmonise distributions better
   "method": "tape",
   "mode": "high-resolution"
@@ -208,7 +212,7 @@ frac_params = {
 vae_params = {
   "batch_size": 512,
   "hidden_size": 256,
-  "epoch_num": 50 # looking at loss plot then 500 seems to be already enough
+  "epoch_num": 100 # looking at loss plot then 500 seems to be already enough
 }
 
 ```
