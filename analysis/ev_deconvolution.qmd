@@ -317,7 +317,8 @@ chart = alt.Chart(fractions).mark_area().encode(
             axis=alt.Axis(labelAngle=-45),
             sort=cyclephase_order), # Rotate x-axis labels for readability
     y=alt.Y('fractions:Q',  # Quantitative data for fraction
-            axis=alt.Axis(format='%')), # Format y-axis as percentages
+            axis=alt.Axis(format='%'),
+            scale=alt.Scale(domain=[0,1])), # Format y-axis as percentages
     color=alt.Color('celltype:N',  # Nominal data for cell types, for stacking and color differentiation
                     legend=alt.Legend(title="celltype")), # Customize legend title
     tooltip=['cyclephase', 'celltype', alt.Tooltip('fractions:Q', format='.2f')] # Tooltip for interactivity, format fraction
