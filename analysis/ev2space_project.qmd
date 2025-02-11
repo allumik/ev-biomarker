@@ -42,7 +42,7 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 
 ## Do you want to rerun all the models?
-rerun_all = True
+rerun_all = False
 
 ## load the environment variables from the .env file
 load_dotenv()

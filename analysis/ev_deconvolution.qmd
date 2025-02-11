@@ -24,6 +24,7 @@ import omicverse as ov
 import anndata as an
 import numpy as np
 import seaborn as sns
+import altair as alt
 import plotly.express as px
 import dash_bio
 import seaborn.objects as so
@@ -298,6 +299,35 @@ funk.dendro_barplot(
   legend_phase_ncol=comb_uf_pheno.cyclephase.unique().size,
   legend_class_ncol=3
   )
+
+
+groupies = ["cyclephase"]
+fractions = frac_pred.join(comb_uf_pheno[groupies]).groupby(groupies).mean()
+fractions.columns.names = ["celltype"]
+
+# 1. Data Reshaping for Altair: Convert to long format
+fractions = fractions.stack().reset_index()
+cyclephase_order = ["pro", "pre", "rec", "post"]
+fractions["cyclephase"] = pd.Categorical(fractions["cyclephase"], categories=cyclephase_order, ordered=True)
+fractions = fractions.rename(columns={0: "fractions"}).reset_index(drop=True)
+
+# 2. Create the Stacked Area Chart with Altair-Lite
+chart = alt.Chart(fractions).mark_area().encode(
+    x=alt.X('cyclephase:N',  # Nominal (categorical) data for samples
+            axis=alt.Axis(labelAngle=-45),
+            sort=cyclephase_order), # Rotate x-axis labels for readability
+    y=alt.Y('fractions:Q',  # Quantitative data for fraction
+            axis=alt.Axis(format='%')), # Format y-axis as percentages
+    color=alt.Color('celltype:N',  # Nominal data for cell types, for stacking and color differentiation
+                    legend=alt.Legend(title="celltype")), # Customize legend title
+    tooltip=['cyclephase', 'celltype', alt.Tooltip('fractions:Q', format='.2f')] # Tooltip for interactivity, format fraction
+).properties(
+    title='Stacked Area Plot of Cell Type Fractions Across Samples'
+)
+
+chart.show()
+
+
 
 # do a summarised lineage plot
 funk.dendro_barplot(

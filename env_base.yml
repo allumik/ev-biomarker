@@ -21,6 +21,7 @@ dependencies:
   - python-dotenv
   - ipykernel
   - seaborn
+  - altair # should use this for all visuals, but including others for backwards comp.
   - plotly
   - dash
   - jupyter-dash
