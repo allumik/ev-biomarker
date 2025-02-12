@@ -300,35 +300,9 @@ funk.dendro_barplot(
   legend_class_ncol=3
   )
 
+```
 
-groupies = ["cyclephase"]
-fractions = frac_pred.join(comb_uf_pheno[groupies]).groupby(groupies).mean()
-fractions.columns.names = ["celltype"]
-
-# 1. Data Reshaping for Altair: Convert to long format
-fractions = fractions.stack().reset_index()
-cyclephase_order = ["pro", "pre", "rec", "post"]
-fractions["cyclephase"] = pd.Categorical(fractions["cyclephase"], categories=cyclephase_order, ordered=True)
-fractions = fractions.rename(columns={0: "fractions"}).reset_index(drop=True)
-
-# 2. Create the Stacked Area Chart with Altair-Lite
-chart = alt.Chart(fractions).mark_area().encode(
-    x=alt.X('cyclephase:N',  # Nominal (categorical) data for samples
-            axis=alt.Axis(labelAngle=-45),
-            sort=cyclephase_order), # Rotate x-axis labels for readability
-    y=alt.Y('fractions:Q',  # Quantitative data for fraction
-            axis=alt.Axis(format='%'),
-            scale=alt.Scale(domain=[0,1])), # Format y-axis as percentages
-    color=alt.Color('celltype:N',  # Nominal data for cell types, for stacking and color differentiation
-                    legend=alt.Legend(title="celltype")), # Customize legend title
-    tooltip=['cyclephase', 'celltype', alt.Tooltip('fractions:Q', format='.2f')] # Tooltip for interactivity, format fraction
-).properties(
-    title='Stacked Area Plot of Cell Type Fractions Across Samples'
-)
-
-chart.show()
-
-
+```{python}
 
 # do a summarised lineage plot
 funk.dendro_barplot(
@@ -349,6 +323,85 @@ funk.dendro_barplot(
   legend_phase_ncol=1,
   legend_class_ncol=1
   )
+
+```
+
+```{python}
+
+# Group and average the samples
+groupies = ["cyclephase", "dataset"]
+fractions = frac_pred.join(comb_uf_pheno[groupies]).groupby(groupies).mean()
+fractions.columns.names = ["celltype"]
+
+# Data Reshaping for Altair: Convert to long format
+fractions = fractions.stack().reset_index()
+cyclephase_order = ["pro", "pre", "rec", "post"]
+fractions["cyclephase"] = pd.Categorical(fractions["cyclephase"], categories=cyclephase_order, ordered=True)
+fractions = fractions.rename(columns={0: "fractions"}).reset_index(drop=True)
+
+# Add lineage information for the celltype
+fractions = fractions.merge(general_cells, on="celltype")
+
+row_charts = []  # List to hold charts for each row (lineage)
+is_first_row = True
+global_color_scale = alt.Scale(domain=fractions.celltype) # Global color scheme
+
+for lineage_val in fractions.lineage.unique():
+  dataset_charts_row = [] # List to hold charts for each dataset in the current lineage row
+  is_first_dataset_in_row = True # Flag to indicate if it's the first plot in the row (for legend)
+  current_row_celltypes = fractions.query("lineage==@lineage_val").celltype.unique()
+
+  for dataset_val in fractions.dataset.unique():
+    # Filter data for the current lineage and dataset
+    filtered_df = fractions.query("lineage==@lineage_val & dataset==@dataset_val")
+
+    # Create a chart for this dataset and lineage
+    current_chart = alt.Chart(filtered_df).mark_area().encode(
+      x=alt.X(
+        'cyclephase:O', 
+        axis=alt.Axis(labelAngle=-45, grid=False, domain=False, title=None),
+        sort=cyclephase_order
+        ),
+      y=alt.Y(
+        'fractions:Q',
+        axis=alt.Axis(format='%', grid=False, title=lineage_val) if is_first_dataset_in_row else None
+        ),
+      color=alt.Color(
+        'celltype:N', # Show legend only for the first chart in the row
+        scale=global_color_scale,
+        legend=alt.Legend(
+          title=None, 
+          values=current_row_celltypes.tolist()
+          ) if is_first_dataset_in_row else None
+      ),
+    ).properties( # Title only for first plot, or dataset name as subtitle
+      width=200,
+      height=150,
+      title=f'{dataset_val}' if is_first_row else ""
+    )
+
+    dataset_charts_row.append(current_chart)
+    is_first_dataset_in_row = False
+  is_first_row = False
+
+  # Horizontally concatenate charts for the current lineage row
+  row_chart = alt.hconcat(*dataset_charts_row, spacing=0).resolve_scale(y='shared')
+  row_charts.append(row_chart) # Add the row chart to the list of rows
+
+# Vertically concatenate all row charts to form the final grid
+final_chart = alt.vconcat(*row_charts, spacing=0).resolve_scale( # Adjust vertical spacing as needed
+    x='shared',
+    y='independent',
+    color='independent' # Keep color scale independent - legends are now handled manually
+).properties(
+  config=alt.Config(
+    view=alt.ViewConfig(
+        strokeWidth=0 # Set strokeWidth to 0 to remove the border line
+    )
+  )
+)
+
+final_chart.show()
 
 ```
 
