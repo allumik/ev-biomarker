@@ -1,0 +1,177 @@
+---
+title: "Single cell deconvolution into Extracellular Vesicules"
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    embed-resources: true
+    self-contained-math: true
+jupyter: python3
+---
+
+
+# Prelude: Setup environment
+
+This document contains the condensed form of analysis and some more technical parts of the final article.
+
+## Load data and environment
+
+Setup the environment and import dependencies.
+
+1. Load the dependencies, set up multithreading.
+2. Set color groups and values.
+
+```{python}
+#| output: false
+
+import re
+import pandas as pd
+import scanpy as sc
+import anndata as an
+import numpy as np
+import altair as alt
+import seaborn as sns
+from IPython.display import HTML
+from pathlib import Path
+from dotenv import load_dotenv
+from os import getenv
+from sklearn.decomposition import PCA
+from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from sklearn.preprocessing import normalize
+
+## import the functions used in this report (got too long to include them in the report)
+import deconvo_functions as funk
+
+## load the environment variables from the .env file
+load_dotenv()
+
+anndata_folder = getenv("ANNDATA_FOLDER")
+atlas_folder = getenv("ATLAS_FOLDER")
+data_folder = getenv("DATA_FOLDER")
+raw_data_folder = getenv("RAW_DATA_FOLDER")
+
+# some other dataset locations
+snapshot_an_loc = Path(data_folder).expanduser() / "sc_deconv_snapshot.h5ad"
+ccht_data_loc = Path(data_folder).expanduser() / "filtered" / "annot_raw.feather"
+ccht_pheno_loc = Path(data_folder).expanduser() / "filtered" / "phenotype.tsv"
+fractions_folder = Path(data_folder) / "tape_fractions"
+fractions_file_loc = fractions_folder / "ccht_fracs.tsv"
+
+```
+
+Load in the datasets:
+
+* the reference single cell dataset from the HECAv2 (`sc_dat`).
+* bulk transcriptomes from UF derived EV's of endometrium and biopsies (`ccht_uf_raw`).
+* phenotype table for the EV and biopsy samples (`ccht_uf_pheno`).
+
+The HECA dataset is renormalised with the `omicsverse` v1.6.7 package's `preprocess` function with the following command `ov.pp.preprocess(sc_dat, mode="pearson|pearson", n_HVGs=3000)`. This normalises the dataset with the Pearson method (??? et al (check the documentation)).
+
+```{python}
+#| output: false
+
+## load in the modified HECA atlas
+sc_dat = an.read_h5ad(snapshot_an_loc)
+
+## load in the EV CCHT only data
+terminator = ["HUT26_UF", "HUT17_UF", "HUT53_UF", "HUT71_UF"] # some samples to exclude
+ccht_uf_raw = pd.read_feather(ccht_data_loc).set_index("gene_id").iloc[:-1]
+ccht_uf_pheno = pd.read_table(ccht_pheno_loc).set_index("samplename").assign(
+    cyclephase=lambda x: 
+      pd.Categorical(x.cyclephase, categories=["pro", "pre", "rec", "post"], ordered=True)
+    )
+ccht_uf_pheno = ccht_uf_pheno.query("samplename not in @terminator and samplename in @ccht_uf_raw.columns")
+ccht_uf_raw = ccht_uf_raw.drop(columns=terminator)
+
+## load in the fractions predicted by the latest trained model
+frac_pred = pd.read_table(fractions_file_loc, sep="\t", index_col=0)
+
+general_cells = ( # associate celltypes with the lineage information in the sc_dat.obs
+  sc_dat.obs
+  .loc[:, ["lineage", "celltype"]]
+  .drop_duplicates("celltype")
+  .set_index("celltype", drop=True)
+  .reindex(frac_pred.columns.values)
+)
+
+```
+
+# Methods
+
+## Pre-processing pipeline
+
+Raw sequencing reads were preprocessed with the "rnaseq" pipeline (v3.12.0) from nf-core [[Ewels et al](10.5281/zenodo.1400710)]. The pipeline was configured to map reads to the GRCh37 genome using the STAR tool and after mapping, quantified with RSEM algorithm [[RSEM](10.1186/1471-2105-12-323) [STAR](10.1093/bioinformatics/bts635)].
+
+```{bash filename="Command for running nf-core/rnaseq"}
+
+## nf-core/rnaseq v3.12 (https://nf-co.re/rnseq/3.12.0)
+nextflow run nf-core/rnaseq \
+  -r 3.12.0 \
+  --input samplesheet_mrna.csv \
+  --genome GRCh37 \
+  --aligner star_rsem \
+  --outdir "./results_mrna/" \
+  -c nextflow.config \
+  -profile singularity
+
+```
+
+## DE analysis
+
+Downstream analysis was done in R and Python programming languages. For differential analysis, we used both DESeq2 and limma-voom algorithms to measure the differences between gene expression levels in different sample groups and to perform statistical testing on the gene-wise differences [[DESeq2](), [limma-voom]()]. While DESeq2 DE results were used for downstream analysis, we used the limma-voom toolset as an alternative approach as it has been shown to have more stringent multiple hypothesis testing in regards to type I error [source: find that benchmarking paper].
+
+[TODO: check up the biomarker reports `ev_biomarker.rmd`]
+
+## QC and sample selection
+
+[TODO: check `ev_biomarker.rmd` and `ev_deconvolution.qmd`]
+
+## TAPE model parameters
+
+This study is based on cell type deconvolution of bulk RNA-seq samples using scRNA-seq reference. For deconvolution analysis we used the [TAPE](https://www.nature.com/articles/s41467-022-34550-9) algorithm and trained the model using the (HECA)[https://doi.org/10.1101/2023.11.03.564728] endometrial cell atlas.
+
+```{python}
+#| output: echo
+
+model_params = {
+  "celltype_key": "celltype",
+  "top_marker_num": 250, # reduce it from the default parameter of 500
+  # get eight of all the single ~ladies~ cells
+  "max_single_cells": round(len(sc_dat.obs.index) / 8),
+  "ratio_num": 1,
+  "gpu": 0
+}
+
+frac_params = {
+  "batch_size": 512,
+  "epochs": 1000, # looking at loss plot then 500 seems to be already enough, but 1000 seems to have more accurate representatoin of the cell types.
+  "method": "tape", # define this, otherwise defaults for scaden
+  "scaler": "ss", # harmonises distributions better
+  "mode": "high-resolution" # for using VAE's for cell type inference
+}
+
+```
+
+
+# Results with Figures
+
+## Fig 1 Extracellular Vesicle Deconvolution
+
+[TODO: Generate tabs with single plots, then finally put it together and show as one composite]
+
+::: {.panel-tabset}
+
+###  {.unnumbered .unlisted}
+
+### Biplot of the Fractions {.unnumbered .unlisted}
+```{python}
+funk.biplot_fractions_altair(frac_pred, ccht_uf_pheno, color_field="cyclephase", style_field="group")[0].show()
+```
+
+In addition, make a histogram of the main loadings to make the contributions more clearer.
+
+```{python}
+
+```
+
+:::

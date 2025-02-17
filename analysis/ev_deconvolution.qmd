@@ -50,7 +50,7 @@ from sklearn.preprocessing import normalize
 import deconvo_functions as funk
 
 ## Do you want to rerun all the models?
-rerun_all = False
+rerun_all = True
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -82,7 +82,6 @@ replace_immu = {
 }
 inv_replace_immu = {value: key for key, values in replace_immu.items() for value in values}
 
-
 ```
 
 Preprocessing for the HECA dataset:
@@ -95,52 +94,67 @@ Preprocessing for the HECA dataset:
 ```{python}
 #| output: false
 
-## Load the main HECA dataset
-sc_dat = sc.read_h5ad(
-  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_with_counts.h5ad",
-  backed = "r"
-)
-
-sc_dat_immu = sc.read_h5ad(
-  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
-  backed = "r"
-)
-
-sc_dat.obs = (
-  sc_dat.obs
-  .assign(
-    cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
-    celltype=lambda x: 
-      x.celltype
-      .astype("object")
-      .mask(
-        x.index.isin(sc_dat_immu.obs.celltype.index), 
-        sc_dat_immu.obs.celltype.astype("object")
-      ),
-    label_long=lambda x:
-      x.label_long
-      .astype("object")
-      .mask(
-        x.index.isin(sc_dat_immu.obs.label_long.index), 
-        sc_dat_immu.obs.label_long.astype("object")
-      )
-      .astype("category")
+snapshot_an_loc = Path(data_folder) / "sc_deconv_snapshot.h5ad"
+if not snapshot_an_loc.exists():
+  ## Load the main HECA dataset if not already formatted
+  sc_dat = sc.read_h5ad(
+    Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_with_counts.h5ad",
+    backed = "r"
   )
-  .rename(columns={"sample": "samplename"})
-  # now generalise the cell types for better deconvolution classes
-  .assign(celltype=lambda x: x.celltype.replace(inv_replace_immu).astype("category"))
-)
 
-## also exclude the endometriosis samples
-the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
-sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].to_memory()
+  sc_dat_immu = sc.read_h5ad(
+    Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
+    backed = "r"
+  )
 
-## exclude some celltypes, such as she hormones cell types and poorly represented samples
-count_tmp = sc_dat.obs.celltype.value_counts()
-no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
-sc_dat = sc_dat[sc_dat.obs.query("celltype not in @no_go_celltype").index, :]
+  sc_dat.obs = (
+    sc_dat.obs
+    .assign(
+      cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
+      celltype=lambda x: 
+        x.celltype
+        .astype("object")
+        .mask(
+          x.index.isin(sc_dat_immu.obs.celltype.index), 
+          sc_dat_immu.obs.celltype.astype("object")
+        ),
+      label_long=lambda x:
+        x.label_long
+        .astype("object")
+        .mask(
+          x.index.isin(sc_dat_immu.obs.label_long.index), 
+          sc_dat_immu.obs.label_long.astype("object")
+        )
+        .astype("category")
+    )
+    .rename(columns={"sample": "samplename"})
+    # now generalise the cell types for better deconvolution classes
+    .assign(celltype=lambda x: x.celltype.replace(inv_replace_immu).astype("category"))
+  )
 
-sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="pearson|pearson", n_HVGs=3000)
+  del sc_dat_immu
+
+  ## also exclude the endometriosis samples
+  the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
+  sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].to_memory()
+
+  ## exclude some celltypes, such as she hormones cell types and poorly represented samples
+  count_tmp = sc_dat.obs.celltype.value_counts()
+  no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
+  sc_dat = sc_dat[sc_dat.obs.query("celltype not in @no_go_celltype").index, :]
+
+  sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="pearson|pearson", n_HVGs=3000)
+
+  ## switch the expression matrix to raw counts if the matrix is preprocessed
+  sc_dat.layers["scaled"] = sc_dat.X
+  sc_dat.X = sc_dat.layers["counts"]
+  del sc_dat.layers["counts"]
+
+  # save the processed dataset
+  sc_dat.write(snapshot_an_loc)
+else:
+  sc_dat.read_h5ad(snapshot_an_loc)
+
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
 # check the minimum size of celltype matrix after filtering
 # np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
@@ -233,11 +247,6 @@ First we'll need to reformat the raw bulk RNA samples from EV to matrix form and
 ```{python}
 #| output: false
 
-## switch the expression matrix to raw counts if the matrix is preprocessed
-sc_dat.layers["scaled"] = sc_dat.X
-sc_dat.X = sc_dat.layers["counts"]
-del sc_dat.layers["counts"]
-
 model_params = {
   "celltype_key": "celltype",
   "top_marker_num": 250, # reduce it from the default parameter of 500
@@ -255,8 +264,6 @@ frac_params = {
   "mode": "high-resolution"
 }
 
-fractions_folder = Path(data_folder) / "tape_fractions"
-
 ```
 
 ::: {.panel-tabset}
@@ -265,6 +272,7 @@ fractions_folder = Path(data_folder) / "tape_fractions"
 
 ```{python}
 
+fractions_folder = Path(data_folder) / "tape_fractions"
 fractions_file = fractions_folder / "comb_fracs.tsv"
 if fractions_file.expanduser().exists() and not rerun_all:
   frac_pred = pd.read_table(fractions_file, sep="\t", index_col=0)
@@ -326,91 +334,57 @@ funk.dendro_barplot(
 
 ```
 
+And a stacked area plot showcasing either the UF and biopsy ratio differences...
+
 ```{python}
 
-# Group and average the samples
-groupies = ["cyclephase", "dataset"]
-fractions = frac_pred.join(comb_uf_pheno[groupies]).groupby(groupies).mean()
-fractions.columns.names = ["celltype"]
-
-# Data Reshaping for Altair: Convert to long format
-fractions = fractions.stack().reset_index()
-cyclephase_order = ["pro", "pre", "rec", "post"]
-fractions["cyclephase"] = pd.Categorical(fractions["cyclephase"], categories=cyclephase_order, ordered=True)
-fractions = fractions.rename(columns={0: "fractions"}).reset_index(drop=True)
-
-# Add lineage information for the celltype
-fractions = fractions.merge(general_cells, on="celltype")
-
-row_charts = []  # List to hold charts for each row (lineage)
-is_first_row = True
-global_color_scale = alt.Scale(domain=fractions.celltype) # Global color scheme
-
-for lineage_val in fractions.lineage.unique():
-  dataset_charts_row = [] # List to hold charts for each dataset in the current lineage row
-  is_first_dataset_in_row = True # Flag to indicate if it's the first plot in the row (for legend)
-  current_row_celltypes = fractions.query("lineage==@lineage_val").celltype.unique()
-
-  for dataset_val in fractions.dataset.unique():
-    # Filter data for the current lineage and dataset
-    filtered_df = fractions.query("lineage==@lineage_val & dataset==@dataset_val")
-
-    # Create a chart for this dataset and lineage
-    current_chart = alt.Chart(filtered_df).mark_area().encode(
-      x=alt.X(
-        'cyclephase:O', 
-        axis=alt.Axis(labelAngle=-45, grid=False, domain=False, title=None),
-        sort=cyclephase_order
-        ),
-      y=alt.Y(
-        'fractions:Q',
-        axis=alt.Axis(format='%', grid=False, title=lineage_val) if is_first_dataset_in_row else None
-        ),
-      color=alt.Color(
-        'celltype:N', # Show legend only for the first chart in the row
-        scale=global_color_scale,
-        legend=alt.Legend(
-          title=None, 
-          values=current_row_celltypes.tolist()
-          ) if is_first_dataset_in_row else None
-      ),
-    ).properties( # Title only for first plot, or dataset name as subtitle
-      width=200,
-      height=150,
-      title=f'{dataset_val}' if is_first_row else ""
-    )
-
-    dataset_charts_row.append(current_chart)
-    is_first_dataset_in_row = False
-  is_first_row = False
-
-  # Horizontally concatenate charts for the current lineage row
-  row_chart = alt.hconcat(*dataset_charts_row, spacing=0).resolve_scale(y='shared')
-  row_charts.append(row_chart) # Add the row chart to the list of rows
-
-# Vertically concatenate all row charts to form the final grid
-final_chart = alt.vconcat(*row_charts, spacing=0).resolve_scale( # Adjust vertical spacing as needed
-    x='shared',
-    y='independent',
-    color='independent' # Keep color scale independent - legends are now handled manually
-).properties(
-  config=alt.Config(
-    view=alt.ViewConfig(
-        strokeWidth=0 # Set strokeWidth to 0 to remove the border line
-    )
-  )
+fractions_long = funk.peruvian_transform(
+  fractions=frac_pred,
+  phenotype=comb_uf_pheno,
+  general_cells=general_cells,
+  grouping_ids=["cyclephase", "group"]
 )
 
-final_chart.show()
+funk.peruvian_grouped(
+  fractions_df=fractions_long,
+  grouping_id="group"
+).show()
+
+```
+
+... or the dataset differences (note that Vigano only has early and mid secretory).
+
+```{python}
+
+fractions_long = funk.peruvian_transform(
+  fractions=frac_pred,
+  phenotype=comb_uf_pheno,
+  general_cells=general_cells,
+  grouping_ids=["cyclephase", "dataset"]
+)
+
+funk.peruvian_grouped(
+  fractions_df=fractions_long,
+  grouping_id="dataset"
+).show()
+
+```
+
+The overall changes throughout the cyclephases averaged over all the samples from the same phase.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(fractions=frac_pred, phenotype=comb_uf_pheno, grouping_ids=["cyclephase"]), 
+  legend_col_n=2
+).show()
 
 ```
 
 Apply PCA on the proportions.
 
 ```{python}
-
-biplot_fractions(frac_pred, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
-
+funk.biplot_fractions(frac_pred, comb_uf_pheno, hue="cyclephase", palette="Set1", style="group")
 ```
 
 Or **by major cell types**:
@@ -429,8 +403,14 @@ frac_pred_gen = pd.DataFrame(
   index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
+funk.dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+    fractions=frac_pred.filter(focus_celltypes, axis=1), phenotype=comb_uf_pheno, grouping_ids=["cyclephase"]
+    ),
+  legend_col_n=1
+).show()
+funk.biplot_fractions(frac_pred_gen, comb_uf_pheno, hue="cyclephase", palette="Set1", style="group")
 """
 
 # generate a temporary file and write the logic there
@@ -467,16 +447,16 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index], comb_uf_pheno)
+frac_long = funk.convert_to_long(frac_pred.loc[comb_uf_pheno.query("group == 'biopsy'").index], comb_uf_pheno)
 
 # perform the tukey hsd analysis
-tukey_res = tukey_table(frac_long)
+tukey_res = funk.tukey_table(frac_long)
 
 # perform the ANOVA per cell type
-anova_res = anova_table(frac_long)
+anova_res = funk.anova_table(frac_long)
 
 # perform rank correlation with dummy vars
-cor_res = cor_table(frac_long)
+cor_res = funk.cor_table(frac_long)
 
 res_join = (
   tukey_res
@@ -500,7 +480,7 @@ frac_tmp = frac_pred.loc[comb_uf_pheno.query("group == 'UF'").index]
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_tmp,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
@@ -509,9 +489,8 @@ dendro_barplot(
   legend_class_ncol=3
   )
 
-
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     frac_tmp
     .melt(var_name="celltype", value_name="props", ignore_index=False)
@@ -532,10 +511,39 @@ dendro_barplot(
 
 ```
 
+Stacked barplot showing the dataset differences.
+
+```{python}
+
+fractions_long = funk.peruvian_transform(
+  fractions=frac_tmp,
+  phenotype=comb_uf_pheno,
+  general_cells=general_cells,
+  grouping_ids=["cyclephase", "dataset"]
+)
+
+funk.peruvian_grouped(
+  fractions_df=fractions_long,
+  grouping_id="dataset"
+).show()
+
+```
+
+The overall changes throughout the cyclephases averaged over all the samples from the same phase.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(fractions=frac_tmp, phenotype=comb_uf_pheno, grouping_ids=["cyclephase"]), 
+  legend_col_n=2
+).show()
+
+```
+
 Apply PCA on the proportions.
 
 ```{python}
-biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
+funk.biplot_fractions(frac_tmp, comb_uf_pheno, hue="cyclephase", palette="Set1", style="group")
 ```
 
 Or **by major cell types**:
@@ -554,8 +562,14 @@ frac_pred_gen = pd.DataFrame(
   index=frac_tmp.index
 )
 
-dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
+funk.dendro_barplot(frac_pred_gen, comb_uf_pheno, legend_class_ncol=2)
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+    fractions=frac_tmp.filter(focus_celltypes, axis=1), phenotype=comb_uf_pheno, grouping_ids=["cyclephase"]
+    ),
+  legend_col_n=1
+).show()
+funk.biplot_fractions(frac_pred_gen, comb_uf_pheno, hue="cyclephase", palette="Set1", style="dataset")
 """
 
 # generate a temporary file and write the logic there
@@ -590,16 +604,16 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_tmp, comb_uf_pheno)
+frac_long = funk.convert_to_long(frac_tmp, comb_uf_pheno)
 
 # perform the tukey hsd analysis
-tukey_res = tukey_table(frac_long)
+tukey_res = funk.tukey_table(frac_long)
 
 # perform the ANOVA per cell type
-anova_res = anova_table(frac_long)
+anova_res = funk.anova_table(frac_long)
 
 # perform rank correlation with dummy vars
-cor_res = cor_table(frac_long)
+cor_res = funk.cor_table(frac_long)
 
 res_join = (
   tukey_res
@@ -625,7 +639,7 @@ As the proportions add up to one, we can also generate a stacked barplot for the
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_tmp,
   comb_uf_pheno,
   legend_phase_bbox=(1.05, -0.2),
@@ -636,7 +650,7 @@ dendro_barplot(
 
 
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     frac_tmp
     .melt(var_name="celltype", value_name="props", ignore_index=False)
@@ -657,10 +671,40 @@ dendro_barplot(
 
 ```
 
+Stacked barplot showing the dataset differences.
+
+```{python}
+
+fractions_long = funk.peruvian_transform(
+  fractions=frac_tmp,
+  phenotype=comb_uf_pheno,
+  general_cells=general_cells,
+  grouping_ids=["cyclephase", "dataset"]
+)
+
+funk.peruvian_grouped(
+  fractions_df=fractions_long,
+  grouping_id="dataset"
+).show()
+
+```
+
+The overall changes throughout the cyclephases averaged over all the samples from the same phase.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(fractions=frac_tmp, phenotype=comb_uf_pheno, grouping_ids=["cyclephase"]), 
+  legend_col_n=2
+).show()
+
+```
+
+
 Apply PCA on the proportions.
 
 ```{python}
-biplot_fractions(frac_tmp, comb_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"dataset"})
+funk.biplot_fractions(frac_tmp, comb_uf_pheno, hue="cyclephase", palette="Set1", style="dataset")
 ```
 
 Or **by major cell types**:
@@ -679,16 +723,16 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_tmp, comb_uf_pheno)
+frac_long = funk.convert_to_long(frac_tmp, comb_uf_pheno)
 
 # perform the tukey hsd analysis
-tukey_res = tukey_table(frac_long)
+tukey_res = funk.tukey_table(frac_long)
 
 # perform the ANOVA per cell type
-anova_res = anova_table(frac_long)
+anova_res = funk.anova_table(frac_long)
 
 # perform rank correlation with dummy vars
-cor_res = cor_table(frac_long)
+cor_res = funk.cor_table(frac_long)
 
 res_join = (
   tukey_res
@@ -737,7 +781,7 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_pred,
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, 0.1),
@@ -746,9 +790,8 @@ dendro_barplot(
   legend_class_ncol=3
   )
 
-
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     frac_pred
     .melt(var_name="celltype", value_name="props", ignore_index=False)
@@ -769,10 +812,40 @@ dendro_barplot(
 
 ```
 
+And a stacked area plot showcasing either the UF and biopsy ratio differences.
+
+```{python}
+
+fractions_long = funk.peruvian_transform(
+  fractions=frac_pred,
+  phenotype=ccht_uf_pheno,
+  general_cells=general_cells,
+  grouping_ids=["cyclephase", "group"]
+)
+
+funk.peruvian_grouped(
+  fractions_df=fractions_long,
+  grouping_id="group"
+).show()
+
+```
+
+The overall changes throughout the cyclephases averaged over all the samples from the same phase.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(fractions=frac_pred, phenotype=ccht_uf_pheno, grouping_ids=["cyclephase"]), 
+  legend_col_n=2
+).show()
+
+```
+
+
 Apply PCA on the proportions.
 
 ```{python}
-biplot_fractions(frac_pred, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
+funk.biplot_fractions(frac_pred, ccht_uf_pheno, hue="cyclephase", palette="Set1", style="group")
 ```
 
 Or **by major cell types**:
@@ -791,8 +864,14 @@ frac_pred_gen = pd.DataFrame(
   index=frac_pred.index
 )
 
-dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1", "style":"group"})
+funk.dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+    fractions=frac_pred.filter(focus_celltypes, axis=1), phenotype=ccht_uf_pheno, grouping_ids=["cyclephase"]
+    ),
+  legend_col_n=1
+).show()
+funk.biplot_fractions(frac_pred_gen, ccht_uf_pheno, hue="cyclephase", palette="Set1", style="group")
 """
 
 # generate a temporary file and write the logic there
@@ -829,16 +908,16 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index], ccht_uf_pheno)
+frac_long = funk.convert_to_long(frac_pred.loc[ccht_uf_pheno.query("group == 'biopsy'").index], ccht_uf_pheno)
 
 # perform the tukey hsd analysis
-tukey_res = tukey_table(frac_long)
+tukey_res = funk.tukey_table(frac_long)
 
 # perform the ANOVA per cell type
-anova_res = anova_table(frac_long)
+anova_res = funk.anova_table(frac_long)
 
 # perform rank correlation with dummy vars
-cor_res = cor_table(frac_long)
+cor_res = funk.cor_table(frac_long)
 
 res_join = (
   tukey_res
@@ -864,7 +943,7 @@ frac_tmp = frac_pred.loc[ccht_uf_pheno.query("group == 'UF'").index]
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_tmp,
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
@@ -874,7 +953,7 @@ dendro_barplot(
   )
 
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     frac_tmp
     .melt(var_name="celltype", value_name="props", ignore_index=False)
@@ -895,10 +974,21 @@ dendro_barplot(
 
 ```
 
+The overall changes throughout the cyclephases averaged over all the samples from the same phase.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(fractions=frac_tmp, phenotype=ccht_uf_pheno, grouping_ids=["cyclephase"]), 
+  legend_col_n=2
+).show()
+
+```
+
 Apply PCA on the proportions.
 
 ```{python}
-biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
+funk.biplot_fractions(frac_tmp, ccht_uf_pheno, hue="cyclephase", palette="Set1")
 ```
 
 Or **by major cell types**:
@@ -917,8 +1007,14 @@ frac_pred_gen = pd.DataFrame(
   index=frac_tmp.index
 )
 
-dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
-biplot_fractions(frac_pred_gen, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
+funk.dendro_barplot(frac_pred_gen, ccht_uf_pheno, legend_class_ncol=2)
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+    fractions=frac_tmp.filter(focus_celltypes, axis=1), phenotype=ccht_uf_pheno, grouping_ids=["cyclephase"]
+    ),
+  legend_col_n=1
+).show()
+funk.biplot_fractions(frac_pred_gen, ccht_uf_pheno, hue="cyclephase", palette="Set1")
 """
 
 # generate a temporary file and write the logic there
@@ -953,16 +1049,16 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_tmp, ccht_uf_pheno)
+frac_long = funk.convert_to_long(frac_tmp, ccht_uf_pheno)
 
 # perform the tukey hsd analysis
-tukey_res = tukey_table(frac_long)
+tukey_res = funk.tukey_table(frac_long)
 
 # perform the ANOVA per cell type
-anova_res = anova_table(frac_long)
+anova_res = funk.anova_table(frac_long)
 
 # perform rank correlation with dummy vars
-cor_res = cor_table(frac_long)
+cor_res = funk.cor_table(frac_long)
 
 res_join = (
   tukey_res
@@ -988,7 +1084,7 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_tmp, 
   ccht_uf_pheno,
   legend_phase_bbox=(1.05, .1),
@@ -999,7 +1095,7 @@ dendro_barplot(
 
 
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     frac_tmp
     .melt(var_name="celltype", value_name="props", ignore_index=False)
@@ -1020,10 +1116,22 @@ dendro_barplot(
 
 ```
 
+The overall changes throughout the cyclephases averaged over all the samples from the same phase.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(fractions=frac_tmp, phenotype=ccht_uf_pheno, grouping_ids=["cyclephase"]), 
+  legend_col_n=2
+).show()
+
+```
+
+
 Apply PCA on the proportions.
 
 ```{python}
-biplot_fractions(frac_tmp, ccht_uf_pheno, kwargs={"hue":"cyclephase", "palette":"Set1"})
+funk.biplot_fractions(frac_tmp, ccht_uf_pheno, hue="cyclephase", palette="Set1")
 ```
 
 Or **by major cell types**:
@@ -1042,16 +1150,16 @@ Perform ANOVA Tukey HSD and correlation on different hypotheses:
 
 ```{python}
 
-frac_long = convert_to_long(frac_tmp, ccht_uf_pheno)
+frac_long = funk.convert_to_long(frac_tmp, ccht_uf_pheno)
 
 # perform the tukey hsd analysis
-tukey_res = tukey_table(frac_long)
+tukey_res = funk.tukey_table(frac_long)
 
 # perform the ANOVA per cell type
-anova_res = anova_table(frac_long)
+anova_res = funk.anova_table(frac_long)
 
 # perform rank correlation with dummy vars
-cor_res = cor_table(frac_long)
+cor_res = funk.cor_table(frac_long)
 
 res_join = (
   tukey_res
@@ -1097,15 +1205,31 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_pred,
   scratch_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
   legend_phase_ncol=scratch_pheno.no_lb.unique().size,
   legend_class_ncol=3,
-  pheno_dat_col="no_lb"
+  phenotype_df_col="no_lb"
   )
+
+```
+
+The overall changes throughout the RIF statuses averaged over all the samples from the same RIF group.
+
+```{python}
+
+funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+      fractions=frac_pred, phenotype=scratch_pheno, grouping_ids=["status_rif"]
+    ), 
+  x_axis_col="status_rif",
+  x_order=["1", "2", "3", "4"],
+  dims=(200, 250),
+  legend_col_n=2
+).show()
 
 ```
 
@@ -1113,10 +1237,10 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(
+funk.biplot_fractions(
   frac_pred, scratch_pheno,
   legend_title="RIF stage",
-  kwargs={"hue":"status_rif", "palette":"flare", "style":"no_lb"}
+  hue="status_rif", palette="flare", style="no_lb"
   )
 
 ```
@@ -1137,17 +1261,17 @@ frac_pred_gen = pd.DataFrame(
   index=frac_pred.index
 )
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_pred_gen,
   scratch_pheno,
   legend_class_ncol=2,
-  pheno_dat_col="no_lb"
+  phenotype_df_col="no_lb"
 )
 
-biplot_fractions(
+funk.biplot_fractions(
   frac_pred_gen, scratch_pheno,
   legend_title="RIF stage",
-  kwargs={"hue":"status_rif", "palette":"flare", "style":"no_lb"}
+  hue="status_rif", palette="flare", style="no_lb"
 )
 """
 
@@ -1181,7 +1305,7 @@ Perform t-test for the pairwise differences of RIF and CTRL samples for each cel
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred, scratch_pheno)
+frac_long = funk.convert_to_long(frac_pred, scratch_pheno)
 
 # write the t-testing function
 ttest_table = pd.DataFrame({
@@ -1227,15 +1351,49 @@ As the proportions still add up to one, we can also generate a stacked barplot f
 
 ```{python}
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_pred, 
   clin_uf_pheno,
   legend_phase_bbox=(1.05, .1),
   legend_class_bbox=(1.05, .1),
   legend_phase_ncol=clin_uf_pheno.implantation.unique().size,
   legend_class_ncol=3,
-  pheno_dat_col="implantation"
+  phenotype_df_col="implantation"
   )
+
+```
+
+The overall changes throughout the clinical statuses averaged over all the samples from the same clinical group.
+
+```{python}
+
+fig1 = funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+      fractions=frac_pred, phenotype=clin_uf_pheno.query("n_transfer_embryo==1"), grouping_ids=["implantation"]
+    ), 
+  x_axis_col="implantation",
+  x_title="Implantation?",
+  grouping_val="Embryo Transfers: 1",
+  dims=(200, 250),
+  legend_col_n=2
+)
+
+fig2 = funk.peruvian_sands(
+  fractions_df=funk.peruvian_transform(
+      fractions=frac_pred, phenotype=clin_uf_pheno.query("n_transfer_embryo==2"), grouping_ids=["implantation"]
+    ), 
+  x_axis_col="implantation",
+  x_title="Implantation?",
+  grouping_val="Embryo Transfers: 2",
+  dims=(200, 250),
+  legend_col_n=2
+)
+
+alt.hconcat(fig1, fig2, spacing=0).resolve_scale( # Adjust vertical spacing as needed
+    x='shared',
+    y='shared',
+    color='shared' # Keep color scale independent - legends are now handled manually
+  ).show()
 
 ```
 
@@ -1243,10 +1401,10 @@ Apply PCA on the proportions.
 
 ```{python}
 
-biplot_fractions(
+funk.biplot_fractions(
   frac_pred, clin_uf_pheno, 
   legend_title="Implantation", 
-  kwargs={"hue":"implantation", "palette":"Set1"} 
+  hue="implantation", palette="Set1"
 )
 
 ```
@@ -1267,17 +1425,17 @@ frac_pred_gen = pd.DataFrame(
   index=frac_pred.index
 )
 
-dendro_barplot(
+funk.dendro_barplot(
   frac_pred_gen, 
   clin_uf_pheno, 
   legend_class_ncol=2,
-  pheno_dat_col="implantation"
+  phenotype_df_col="implantation"
 )
 
-biplot_fractions(
+funk.biplot_fractions(
   frac_pred_gen, clin_uf_pheno, 
   legend_title="Implantation", 
-  kwargs={"hue":"implantation", "palette":"Set1"} 
+  hue="implantation", palette="Set1" 
 )
 """
 
@@ -1311,7 +1469,7 @@ Perform t-test for the pairwise differences of RIF and CTRL samples for each cel
 
 ```{python}
 
-frac_long = convert_to_long(frac_pred, clin_uf_pheno).drop(columns=["n_transfer_embryo"])
+frac_long = funk.convert_to_long(frac_pred, clin_uf_pheno).drop(columns=["n_transfer_embryo"])
 
 # write the t-testing function
 ttest_table = pd.DataFrame({
@@ -1330,9 +1488,6 @@ ttest_table.to_excel(fractions_folder / "clin_test.xlsx", sheet_name="clin")
 
 # Cross-comparisons
 
-```{python}
-```
-
 ## How do the clinical samples correlate with different cycle phase samples?
 
 Here we compare the clinical sample fractions with the CCHT HUT sampleset, both UF and biopsy.
@@ -1346,7 +1501,7 @@ Here we compare the clinical sample fractions with the CCHT HUT sampleset, both 
 # load the fractions
 frac_clin = frac_pred # reuse already processed file
 frac_ccht_mat = pd.read_table(fractions_folder / "ccht_fracs.tsv", sep="\t", index_col=0)
-frac_ccht = convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'biopsy'"))
+frac_ccht = funk.convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'biopsy'"))
 
 list_to_df = []
 for cyclephase in frac_ccht.cyclephase.unique():
@@ -1357,7 +1512,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
         cyclephase,
         celltype,
         samplename,
-        mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
+        funk.mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
       ])
 
 mah_res = pd.DataFrame(
@@ -1372,7 +1527,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
     mah_res
     .query("cyclephase == @cyclephase")
     .pivot_table(index="samplename", columns="celltype", values="mah_dist")
-    .apply(geometric_mean, axis=1)
+    .apply(funk.geometric_mean, axis=1)
     # .mean(axis=1)
   })
 
@@ -1450,7 +1605,7 @@ sns.scatterplot(x='PC1', y='PC2', hue='group', style="dataset", data=pca_df, pal
 # load the fractions
 frac_clin = scratch_pred # reuse already processed file
 frac_ccht_mat = pd.read_table(fractions_folder / "ccht_fracs.tsv", sep="\t", index_col=0)
-frac_ccht = convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'biopsy'"))
+frac_ccht = funk.convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'biopsy'"))
 
 list_to_df = []
 for cyclephase in frac_ccht.cyclephase.unique():
@@ -1461,7 +1616,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
         cyclephase,
         celltype,
         samplename,
-        mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
+        funk.mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
       ])
 
 mah_res = pd.DataFrame(
@@ -1476,7 +1631,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
     mah_res
     .query("cyclephase == @cyclephase")
     .pivot_table(index="samplename", columns="celltype", values="mah_dist")
-    .apply(geometric_mean, axis=1)
+    .apply(funk.geometric_mean, axis=1)
     # .mean(axis=1)
   })
 
@@ -1554,7 +1709,7 @@ sns.scatterplot(x='PC1', y='PC2', hue='group', style="dataset", data=pca_df, pal
 # load the fractions
 frac_clin = frac_pred # reuse already processed file
 frac_ccht_mat = pd.read_table(fractions_folder / "ccht_fracs.tsv", sep="\t", index_col=0)
-frac_ccht = convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'UF'"))
+frac_ccht = funk.convert_to_long(frac_ccht_mat, ccht_uf_pheno.query("group == 'UF'"))
 
 list_to_df = []
 for cyclephase in frac_ccht.cyclephase.unique():
@@ -1565,7 +1720,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
         cyclephase,
         celltype,
         samplename,
-        mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
+        funk.mahalanobis_distances(frac_clin.loc[samplename, celltype], ref_vals)
       ])
 
 mah_res = pd.DataFrame(
@@ -1580,7 +1735,7 @@ for cyclephase in frac_ccht.cyclephase.unique():
     mah_res
     .query("cyclephase == @cyclephase")
     .pivot_table(index="samplename", columns="celltype", values="mah_dist")
-    .apply(geometric_mean, axis=1)
+    .apply(funk.geometric_mean, axis=1)
     # .mean(axis=1)
   })
 
@@ -1661,6 +1816,13 @@ First lets perform statistical testing on the differences of all cell proportion
 
 ```{python}
 
+pheno_tmp = (
+  ccht_uf_pheno
+  .loc[frac_ccht_mat.index]
+  .assign(HUT=lambda x: x.index.str.extract(r"(HUT\d+)", expand=False))
+  .filter(["HUT", "cyclephase"])
+)
+
 # Function to calculate statistics for each group
 def calculate_stats(group):
   if len(group) == 2:
@@ -1672,21 +1834,14 @@ def calculate_stats(group):
   else:
     return None
 
-pheno_tmp = (
-  ccht_uf_pheno
-  .assign(HUT=lambda x: x.index.str.extract(r"(HUT\d+)", expand=False))
-  .filter(["HUT", "cyclephase"])
-  .drop_duplicates()
-  .set_index("HUT")
-  )
-
 # select out samples that have duplicated methods and correlate them
 results_df = (
   frac_ccht_mat
-  .groupby( lambda x: re.match(r"(HUT\d+)", x).group(1) )
+  .groupby(lambda x: re.match(r"(HUT\d+)", x).group(1) )
   .apply(calculate_stats)
-  .join(pheno_tmp, how="left")
+  .join(pheno_tmp.drop_duplicates().set_index("HUT"), how="left")
   .reset_index(names="HUT")
+  .dropna(axis=0, how="any")
   )
 
 # Print the HTML table
@@ -1698,34 +1853,37 @@ Then lets do a correlation matrix of paired samples with the EV samples on the Y
 
 ```{python}
 
+included_samples = pheno_tmp.query("HUT in @results_df.HUT").index
+prepped_pheno = ccht_uf_pheno.loc[included_samples]
+prepped_pheno.index.names = ["samplename"]
+prepped_mat = frac_ccht_mat.loc[included_samples]
 # run a corr matrix with itself
 corr_mat = (
-  frac_ccht_mat
+  prepped_mat
   # reorder the mat per cyclephase grouping
-  .reindex(ccht_uf_pheno.sort_values(["cyclephase", "samplename"]).index)
+  .loc[prepped_pheno.sort_values(["cyclephase", "samplename"]).index]
   .T
   .corr(method="spearman")
   # select out only cols with UF in columns and biopsy in rows
-  .filter(regex=r"UF", axis=0).filter(regex=r"biopsy", axis=1)
-  # reverse the rows to get mirrored image
+  .filter(regex="UF", axis=0).filter(regex="biopsy", axis=1)
   .iloc[::-1]
 )
 
 # create a colormap for rows
 lut = dict(zip(
-  np.sort(ccht_uf_pheno.cyclephase.unique()),
-  sns.color_palette("Set2", ccht_uf_pheno.cyclephase.unique().size).as_hex()
+  np.sort(prepped_pheno.cyclephase.unique()),
+  sns.color_palette("Set2", prepped_pheno.cyclephase.unique().size).as_hex()
   ))
 
 row_colors = (
   ccht_uf_pheno
-  .reindex(frac_ccht_mat.index.values) # double check
+  .loc[included_samples]
   .cyclephase
   .astype("object")
   .map(lut)
 )
 
-gaps = ccht_uf_pheno.sort_values("cyclephase").cyclephase.value_counts(sort=False) / 2
+gaps = prepped_pheno.sort_values("cyclephase").cyclephase.value_counts(sort=False) / 2
 
 # Generate the heatmap
 plt.figure(figsize=(10, 8))
@@ -1753,15 +1911,16 @@ Finally, the heatmap of the difference of proportions per paired sample per cell
 
 # calculate absolute diff per celltype per paired sample
 results_df = (
-  frac_ccht_mat
+  prepped_mat
   .groupby(lambda x: re.match(r"(HUT\d+)", x).group(1))
   .apply(lambda x: x.iloc[0] - x.iloc[1]) # [0] if UF, [1] is biopsy
   # reorder the mat per cyclephase grouping
-  .reindex(pheno_tmp.sort_values(["cyclephase"]).index)
+  .reindex(pheno_tmp.drop_duplicates().sort_values(["cyclephase"]).HUT)
   .T
+  .dropna(axis=1, how="any")
 )
 
-col_cols = pheno_tmp.cyclephase.map(lut)
+col_cols = pheno_tmp.drop_duplicates().set_index("HUT").cyclephase.map(lut)
 
 # Generate the heatmap
 sns.clustermap(
@@ -1845,7 +2004,7 @@ join_pheno = pd.concat(
 )
 
 # plot it
-dendro_barplot(
+funk.dendro_barplot(
   join_props,
   join_pheno,
   legend_phase_bbox=(1.05, 0.1),
@@ -1855,7 +2014,7 @@ dendro_barplot(
   )
 
 # do a summarised lineage plot
-dendro_barplot(
+funk.dendro_barplot(
   (
     join_props
     .melt(var_name="celltype", value_name="props", ignore_index=False)
