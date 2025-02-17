@@ -13,7 +13,7 @@ dependencies:
   - loompy
   - anndata
   - scanpy
-  - omicverse
+  - omicverse==1.6.7
   - scrublet
   - geoparse
   - tenacity
