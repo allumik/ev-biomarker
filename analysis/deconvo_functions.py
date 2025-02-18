@@ -151,8 +151,10 @@ def biplot_fractions_altair(
   fractions_df: pd.DataFrame,
   phenotype_df: pd.DataFrame,
   legend_title: str = "Cycle Phase",
-  color_field: str = None,  # Added for flexibility
-  style_field: str = None   # Added for flexibility
+  color_field: str = None, # Added for flexibility
+  style_field: str = None, # Added for flexibility
+  text_limit = 0.04, # controls on how much labels are shown
+  dims = (400, 300)
 ) -> Tuple[alt.Chart, PCA]:
   """Generates an Altair biplot of Principal Component Analysis (PCA) and its loadings.
 
@@ -165,6 +167,8 @@ def biplot_fractions_altair(
       legend_title: Title for the legend.
       color_field: Column in the merged DataFrame to use for color encoding.
       style_field: Column in the merged DataFrame to use for shape encoding.
+      text_limit: Controls on how many of loading titles are shown
+      dims: The dimensions of the output plot, defaults to (400, 300)
 
   Returns:
       Tuple[alt.Chart, PCA]: A tuple containing:
@@ -186,55 +190,45 @@ def biplot_fractions_altair(
   ).reset_index()  # Reset index for Altair
 
   # --- Create the base scatter plot ---
-  base = alt.Chart(pca_df).encode(
-    x=alt.X("PC1:Q", axis=alt.Axis(title=f"PC1 ({expl_var[0]:.2%})")),
-    y=alt.Y("PC2:Q", axis=alt.Axis(title=f"PC2 ({expl_var[1]:.2%})")),
+  scatter = alt.Chart(pca_df).encode(
+    x=alt.X("PC1:Q", axis=alt.Axis(title=f"PC1 ({expl_var[0]:.2%})", tickCount=1)),
+    y=alt.Y("PC2:Q", axis=alt.Axis(title=f"PC2 ({expl_var[1]:.2%})", tickCount=1)),
+    color=alt.Color(f"{color_field}:N", title=legend_title)
+      if color_field else None,
+    shape=alt.Shape(f"{style_field}:N") if style_field else None
+  ).mark_point(
+    size=40, filled=True, opacity=.9
   )
-
-  # Add color and shape encoding if specified
-  if color_field:
-    base = base.encode(color=alt.Color(f"{color_field}:N", title=legend_title))
-  if style_field:
-    base = base.encode(shape=alt.Shape(f"{style_field}:N"))
-  
-  scatter = base.mark_point(size=60)
 
   # --- Create the loadings plot ---
   loadings_chart = (
     alt.Chart(pd.concat([
       loadings_df, 
-      pd.DataFrame({"index": loadings_df["index"], "PC1":0.0, "PC2": 0})
+      pd.DataFrame({"index": loadings_df["index"], "PC1": 0, "PC2": 0})
       ], ignore_index=True))
     .mark_line(color="red", opacity=0.5)  # Use mark_rule instead of mark_line
-    .encode(
-      x='PC1:Q',
-      y='PC2:Q',
-      detail="index"
-    )
+    .encode(x='PC1:Q', y='PC2:Q', detail="index")
   )
 
   # --- Create text labels for loadings (with filtering) ---
   loadings_text = (
     alt.Chart(loadings_df)
-      .mark_text(align='left', dx=5, dy=-5, color="black", fontSize=10)
-      .encode(
-        x="PC1:Q",
-        y="PC2:Q",
-        text='index:N'
-      )
+      .mark_text(align='center', dx=4, dy=0, color="black", fontSize=10)
+      .encode(x="PC1:Q", y="PC2:Q", text='index:N')
       .transform_filter(
-      (alt.datum.PC1 > 0.01) | (alt.datum.PC1 < -0.01) | (alt.datum.PC2 > 0.01) | (alt.datum.PC2 < -0.01)
+        (alt.datum.PC1 > text_limit) | 
+        (alt.datum.PC1 < -text_limit) |  
+        (alt.datum.PC2 > text_limit) | 
+        (alt.datum.PC2 < -text_limit)
       )
   )
 
   # --- Combine the plots ---
-  chart = (scatter + loadings_chart + loadings_text).properties(
+  return (scatter + loadings_chart + loadings_text).properties(
     title="PCA Biplot",
-    width=600,  # Adjust as needed
-    height=400   # Adjust as needed
-  )
-
-  return chart, pca
+    width=dims[0],  # Adjust as needed
+    height=dims[1]   # Adjust as needed
+  ), pca
 
 
 def biplot_fractions(fractions_df: pd.DataFrame, phenotype_df: pd.DataFrame, legend_title: str = "Cycle Phase", **kwargs) -> Tuple[plt.Figure, PCA]:
@@ -375,7 +369,7 @@ def peruvian_sands(
       An Altair-Lite Chart object.
   """
   if global_color_scale is None: global_color_scale = alt.Scale(domain=fractions_df.celltype.unique().tolist())
-  return alt.Chart(fractions_df).mark_area().encode(
+  return alt.Chart(fractions_df, view=alt.ViewConfig(strokeWidth=0)).mark_area().encode(
     x=alt.X(
       f'{x_axis_col}:O',
       axis=alt.Axis(labelAngle=-45, grid=False, domain=False, title=x_title),
@@ -383,7 +377,8 @@ def peruvian_sands(
       ),
     y=alt.Y(
       'fractions:Q',
-      axis=alt.Axis(format='%', grid=False, title=lineage_val) if is_first_dataset_in_row else None
+      axis=alt.Axis(format='%', grid=False, title=lineage_val) 
+        if is_first_dataset_in_row else None
       ),
     color=alt.Color(
       'celltype:N', # Show legend only for the first chart in the row
@@ -406,6 +401,7 @@ def peruvian_grouped(
   fractions_df: pd.DataFrame,
   cyclephase_order: list = ["pro", "pre", "rec", "post"],
   grouping_id: str = "dataset",
+  global_color_scale: alt.Scale = None,
   dims: tuple = (200, 150)
 ) -> alt.Chart:
   """Generates a faceted stacked area chart of cell type fractions across cycle phases, faceted by lineage and dataset.
@@ -434,7 +430,7 @@ def peruvian_grouped(
   """
   row_charts = [] # List to hold charts for each row (lineage)
   is_first_row = True
-  global_color_scale = alt.Scale(domain=fractions_df.celltype.unique().tolist())
+  if global_color_scale is None: global_color_scale = alt.Scale(domain=fractions_df.celltype.unique().tolist())
 
   for lineage_val in fractions_df.lineage.unique():
     dataset_charts_row = [] # List to hold charts for each dataset in the current lineage row
@@ -465,10 +461,4 @@ def peruvian_grouped(
     x='shared',
     y='independent',
     color='independent' # Keep color scale independent - legends are now handled manually
-  ).properties(
-    config=alt.Config(
-      view=alt.ViewConfig(
-        strokeWidth=0 # Set strokeWidth to 0 to remove the border line
-      )
-    )
   )

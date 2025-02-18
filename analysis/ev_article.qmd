@@ -94,6 +94,9 @@ general_cells = ( # associate celltypes with the lineage information in the sc_d
   .reindex(frac_pred.columns.values)
 )
 
+# Color scale for the celltypes - TODO: extende the color range to not repeat
+global_color_scale = alt.Scale(domain=general_cells.index.unique().tolist())
+
 ```
 
 # Methods
@@ -161,17 +164,86 @@ frac_params = {
 
 ::: {.panel-tabset}
 
-###  {.unnumbered .unlisted}
+### Proportions Plot of Biopsy and EV {.unnumbered .unlisted}
+
+```{python}
+
+fractions_long = funk.peruvian_transform(
+  fractions=frac_pred,
+  phenotype=ccht_uf_pheno,
+  general_cells=general_cells,
+  grouping_ids=["cyclephase", "group"]
+)
+
+peruvian_bio_ev = funk.peruvian_grouped(
+  fractions_df=fractions_long,
+  grouping_id="group",
+  global_color_scale=global_color_scale,
+  dims=(200, 150)
+)
+
+peruvian_bio_ev.show()
+
+```
 
 ### Biplot of the Fractions {.unnumbered .unlisted}
+
 ```{python}
-funk.biplot_fractions_altair(frac_pred, ccht_uf_pheno, color_field="cyclephase", style_field="group")[0].show()
+
+biplot, pca = funk.biplot_fractions_altair(
+  frac_pred, 
+  ccht_uf_pheno, 
+  color_field="cyclephase", 
+  style_field="group",
+  text_limit = 0.04, # controls on how much labels are shown
+  dims = (500, 400)
+  )
+biplot.show()
+
 ```
 
 In addition, make a histogram of the main loadings to make the contributions more clearer.
 
 ```{python}
 
+# get the euclidean distance of explained variance per component
+loadings = np.linalg.norm(pca.components_.T * np.sqrt(pca.explained_variance_), axis=1)
+loadings_df = pd.DataFrame({
+  "Variance Explained": loadings, "Feature": frac_pred.columns
+}).sort_values("Variance Explained", ascending=False)  # Reset index for Altair
+
+loadings_plt = alt.Chart(loadings_df).mark_bar().encode(
+  x=alt.X("Feature:N", sort=None, axis=alt.Axis(labelAngle=-60)),
+  y=alt.Y("Variance Explained:Q"),
+  color=alt.Color("Feature:N", legend=None, scale=global_color_scale)
+).properties(
+  title='Loadings for Principal Component',
+  width=500,
+  height=150
+)
+
+loadings_plt.show()
+
+```
+
+### DE directionality plot {.unnumbered .unlisted}
+TODO: Get the DE directionality plot from Elina
+
+```{python}
 ```
 
 :::
+
+Combining them all into one.
+
+```{python}
+(peruvian_bio_ev | (biplot & loadings_plt)).resolve_scale(
+    x='independent',
+    y='independent',
+    color='independent', # Keep color scale independent - legends are now handled manually
+    shape="independent"
+  )
+# below both of them there should be the directionality plot of DE genes
+```
+
+## Fig 2 
