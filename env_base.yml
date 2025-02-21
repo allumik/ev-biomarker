@@ -15,7 +15,6 @@ dependencies:
   - scanpy
   - omicverse==1.6.7
   - scrublet
-  - geoparse
   - tenacity
   - pandas
   - python-dotenv
@@ -41,7 +40,6 @@ dependencies:
     - pylance
     - matplotlib
     - dash-bio
-    - tangram-sc==1.0.4
 
   # GPU stuff
   # pytorch 2.0.1 is the last one to support cuda 11.7
@@ -60,7 +58,7 @@ dependencies:
   - r-heatmaply
 
   # R deps
-  - r-base>=4.1.0 # this version for the pipes
+  - r-base>=4.1 # this version for the pipes
   - r-dotenv
   - r-devtools
   - r-biocmanager
@@ -76,7 +74,6 @@ dependencies:
   - r-seurat
   - r-seuratobject
   - r-feather
-  - r-sceasy
   - r-future
   - r-dwls
   - bioconductor-biomart

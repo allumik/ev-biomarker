@@ -99,6 +99,15 @@ global_color_scale = alt.Scale(domain=general_cells.index.unique().tolist())
 
 ```
 
+We also load in the different statistical testing tables for CCHT dataset.
+
+```{python}
+
+ccht_bio_stat = pd.read_excel(fractions_folder / "ccht_bio.xlsx", index_col=0)
+ccht_uf_stat = pd.read_excel(fractions_folder / "ccht_uf.xlsx", index_col=0)
+
+```
+
 # Methods
 
 ## Pre-processing pipeline
@@ -190,35 +199,61 @@ peruvian_bio_ev.show()
 
 ```{python}
 
-biplot, pca = funk.biplot_fractions_altair(
-  frac_pred, 
-  ccht_uf_pheno, 
+biplot, pca = funk.biplot_fractions(
+  frac_pred,
+  ccht_uf_pheno,
   color_field="cyclephase", 
   style_field="group",
   text_limit = 0.04, # controls on how much labels are shown
-  dims = (500, 400)
+  dims = (400, 400)
   )
 biplot.show()
 
 ```
 
-In addition, make a histogram of the main loadings to make the contributions more clearer.
+In addition, make a histogram of the main loadings to make the contributions more clearer. `TODO: make it into percentages?`
 
 ```{python}
 
-# get the euclidean distance of explained variance per component
-loadings = np.linalg.norm(pca.components_.T * np.sqrt(pca.explained_variance_), axis=1)
-loadings_df = pd.DataFrame({
-  "Variance Explained": loadings, "Feature": frac_pred.columns
-}).sort_values("Variance Explained", ascending=False)  # Reset index for Altair
+def format_loadings(pca_obj, celltypes):
+  """
+  Get the euclidean distance of explained variance per component of `pca_obj`.
+  Generate a dataframe with the "Variance Explained" and the "Feature" column from `celltypes` list.
+  """
+  loadings = np.linalg.norm(pca_obj.components_.T * np.sqrt(pca_obj.explained_variance_), axis=1)
+  return pd.DataFrame({
+    "Variance Explained": loadings, "Feature": celltypes
+  }).sort_values("Variance Explained", ascending=False).reset_index(drop=True)
 
-loadings_plt = alt.Chart(loadings_df).mark_bar().encode(
+pca_all = pca # save it with another name for clarity
+loadings_all = format_loadings(pca_all, frac_pred.columns).rename(columns={"Variance Explained": "Combined"}).set_index("Feature")
+
+pheno_tmp = ccht_uf_pheno.query("group == 'UF'")
+_, pca_uf = funk.biplot_fractions(frac_pred.loc[pheno_tmp.index], pheno_tmp, color_field="cyclephase")
+loadings_uf = format_loadings(pca_uf, frac_pred.columns).rename(columns={"Variance Explained": "UF"}).set_index("Feature")
+
+pheno_tmp = ccht_uf_pheno.query("group == 'biopsy'")
+_, pca_bio = funk.biplot_fractions(frac_pred.loc[pheno_tmp.index], pheno_tmp)
+loadings_bio = format_loadings(pca_bio, frac_pred.columns).rename(columns={"Variance Explained": "Biopsy"}).set_index("Feature")
+
+
+## The plot part - visualise all the different loadings
+loadings_combined = (
+  pd.concat([loadings_all, loadings_uf, loadings_bio], axis=1)
+  .stack()
+  .reset_index()
+  .rename(columns={"level_1": "Group", 0: "Variance Explained"})
+  )
+
+loadings_plt = alt.Chart(loadings_combined).mark_line(
+    point=alt.OverlayMarkDef(filled=False, fill="white", size=10)
+  ).encode(
   x=alt.X("Feature:N", sort=None, axis=alt.Axis(labelAngle=-60)),
   y=alt.Y("Variance Explained:Q"),
-  color=alt.Color("Feature:N", legend=None, scale=global_color_scale)
+  color=alt.Color("Group:N")
 ).properties(
   title='Loadings for Principal Component',
-  width=500,
+  width=400,
   height=150
 )
 
@@ -227,9 +262,16 @@ loadings_plt.show()
 ```
 
 ### DE directionality plot {.unnumbered .unlisted}
-TODO: Get the DE directionality plot from Elina
+
+Here we create a visual representation of the statistical testing and correlation analysis results of the UF and Biopsy samples. We present the most statistically significant changes throughout the cycle phases.
 
 ```{python}
+# maybe a table-like plot of the changes?
+# or just a scatter plot with the cor at y and phases at x, and stat signf marked with *?
+# it has to be a long rectangle to fit below the other plots
+ccht_bio_stat = 
+ccht_uf_stat =
+
 ```
 
 :::
@@ -237,13 +279,13 @@ TODO: Get the DE directionality plot from Elina
 Combining them all into one.
 
 ```{python}
-(peruvian_bio_ev | (biplot & loadings_plt)).resolve_scale(
-    x='independent',
-    y='independent',
-    color='independent', # Keep color scale independent - legends are now handled manually
-    shape="independent"
-  )
-# below both of them there should be the directionality plot of DE genes
+# have to resolve the color scale, otherwise the loadings_plt will override the biplot's scale
+(peruvian_bio_ev | (biplot & loadings_plt).resolve_scale(color="independent")).show()
+# below both of them there should be the directionality plot of DE proportions
 ```
 
 ## Fig 2 
+
+```{python}
+
+```

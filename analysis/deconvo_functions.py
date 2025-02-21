@@ -147,7 +147,7 @@ def dendro_barplot(
 
 
 
-def biplot_fractions_altair(
+def biplot_fractions(
   fractions_df: pd.DataFrame,
   phenotype_df: pd.DataFrame,
   legend_title: str = "Cycle Phase",
@@ -190,14 +190,13 @@ def biplot_fractions_altair(
   ).reset_index()  # Reset index for Altair
 
   # --- Create the base scatter plot ---
-  scatter = alt.Chart(pca_df).encode(
+  scatter = alt.Chart(pca_df).mark_point(
+    size=40, filled=True
+  ).encode(
     x=alt.X("PC1:Q", axis=alt.Axis(title=f"PC1 ({expl_var[0]:.2%})", tickCount=1)),
     y=alt.Y("PC2:Q", axis=alt.Axis(title=f"PC2 ({expl_var[1]:.2%})", tickCount=1)),
-    color=alt.Color(f"{color_field}:N", title=legend_title)
-      if color_field else None,
-    shape=alt.Shape(f"{style_field}:N") if style_field else None
-  ).mark_point(
-    size=40, filled=True, opacity=.9
+    color=alt.Color(f"{color_field}:N", title=legend_title) if color_field else "black",
+    shape=alt.Shape(f"{style_field}:N") if style_field else "circle"
   )
 
   # --- Create the loadings plot ---
@@ -216,71 +215,19 @@ def biplot_fractions_altair(
       .mark_text(align='center', dx=4, dy=0, color="black", fontSize=10)
       .encode(x="PC1:Q", y="PC2:Q", text='index:N')
       .transform_filter(
-        (alt.datum.PC1 > text_limit) | 
-        (alt.datum.PC1 < -text_limit) |  
-        (alt.datum.PC2 > text_limit) | 
+        (alt.datum.PC1 > text_limit) |
+        (alt.datum.PC1 < -text_limit) |
+        (alt.datum.PC2 > text_limit) |
         (alt.datum.PC2 < -text_limit)
       )
   )
 
   # --- Combine the plots ---
-  return (scatter + loadings_chart + loadings_text).properties(
+  return (loadings_chart + loadings_text + scatter).properties(
     title="PCA Biplot",
     width=dims[0],  # Adjust as needed
     height=dims[1]   # Adjust as needed
   ), pca
-
-
-def biplot_fractions(fractions_df: pd.DataFrame, phenotype_df: pd.DataFrame, legend_title: str = "Cycle Phase", **kwargs) -> Tuple[plt.Figure, PCA]:
-  """Generates a biplot of Principal Component Analysis (PCA) and its loadings.
-
-  This function performs PCA on the input `fractions_df` (DataFrame representing
-  proportions or fractions of different features), and visualizes the results
-  as a scatter plot (biplot).  It overlays the loadings of the original features
-  onto the PCA plot, showing their contribution to the principal components.
-
-  Args:
-      fractions_df: A pandas DataFrame where rows represent samples and columns represent features.
-          The values in the DataFrame should be fractions or proportions (not raw counts).
-      phenotype_df: A pandas DataFrame containing phenotype data. It must have the same index as `fractions_df`.
-          This DataFrame is used to color or otherwise style the points in the scatter plot,
-          based on the provided keyword arguments.
-      legend_title: The title for the legend in the plot. Defaults to "Cycle Phase".
-      **kwargs:  Additional keyword arguments passed to `seaborn.scatterplot`.  This allows
-          customization of the scatter plot, such as coloring points by a column in `phenotype_df`
-          (e.g., `hue=phenotype_df["Cycle Phase"]`).
-  """
-  # PCA calculation
-  pca = PCA(n_components=2)
-  pca_df = (
-    pd.DataFrame(data=pca.fit_transform(fractions_df), columns=["PC1", "PC2"])
-    .set_index(fractions_df.index)
-    .merge(phenotype_df, left_index=True, right_index=True)
-  )
-  expl_var = pca.explained_variance_ratio_
-  loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
-
-  # Visualization
-  fig = plt.figure(figsize=(8, 6))
-  sns.scatterplot(x='PC1', y='PC2', data=pca_df, **kwargs)
-
-  # Plot loadings
-  for i, feature in enumerate(fractions_df.columns):  # Corrected: Use frac_obj.columns
-      plt.arrow(0, 0, loadings[i, 0], loadings[i, 1], color='r', alpha=0.5, head_width=0.005, linewidth=.6)
-      # Display text for significant loadings
-      if abs(loadings[i, 0]) > 0.01 or abs(loadings[i, 1]) > 0.01:  #Corrected to use abs
-          plt.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.4, feature, color='black', ha='center', va='center', size=8)
-
-  plt.title('PCA Result')
-  plt.xlabel(f'PC1 ({expl_var[0]:.2%})')
-  plt.ylabel(f'PC2 ({expl_var[1]:.2%})')
-  plt.legend(title=legend_title, loc="upper left", bbox_to_anchor=(1.05, 1))
-  plt.grid(False)
-  # Major grid only
-  plt.axhline(0, color="lightgray", linewidth=1)
-  plt.axvline(0, color="lightgray", linewidth=1)
-
-  return fig, pca
 
 
 
