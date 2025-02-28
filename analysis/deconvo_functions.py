@@ -57,7 +57,7 @@ def cor_table(fracs_long) -> pd.DataFrame:
   # convert the cyclephase to a dummy var
   fracs_long["dummy_phase"] = pd.Categorical(
     fracs_long.cyclephase,
-    categories=["pre", "pro", "rec", "post"],
+    categories=["pro", "pre", "rec", "post"],
     ordered=True
     ).codes
   cor_res = {

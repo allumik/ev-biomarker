@@ -50,7 +50,7 @@ from sklearn.preprocessing import normalize
 import deconvo_functions as funk
 
 ## Do you want to rerun all the models?
-rerun_all = True
+rerun_all = False
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -153,7 +153,7 @@ if not snapshot_an_loc.exists():
   # save the processed dataset
   sc_dat.write(snapshot_an_loc)
 else:
-  sc_dat.read_h5ad(snapshot_an_loc)
+  sc_dat = an.read_h5ad(snapshot_an_loc)
 
 # sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
 # check the minimum size of celltype matrix after filtering

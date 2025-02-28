@@ -266,11 +266,52 @@ loadings_plt.show()
 Here we create a visual representation of the statistical testing and correlation analysis results of the UF and Biopsy samples. We present the most statistically significant changes throughout the cycle phases.
 
 ```{python}
-# maybe a table-like plot of the changes?
-# or just a scatter plot with the cor at y and phases at x, and stat signf marked with *?
-# it has to be a long rectangle to fit below the other plots
-ccht_bio_stat = 
-ccht_uf_stat =
+
+def swap_groups(df, to_swap):
+  for g1, g2 in to_swap:
+    # find that combination of pairs in the dataframe
+    stats_view = (df.group1==g1) & (df.group2==g2)
+    # swap the column names for those pairs of groups
+    swapped_view = df.loc[stats_view].rename(columns={"group1": "group2", "group2": "group1"})
+    # also invert the diff bc the groups have swapped
+    swapped_view["meandiff"] *= -1
+    # and now replace that part of the dataframe
+    df.loc[stats_view] = swapped_view
+  return df
+
+swapper = [("post", "rec"), ("rec", "pre"), ("pre", "pro")]
+excluder = ["post_vs_pre", "pro_vs_rec"]
+comp_order = ["pro_vs_pre", "pre_vs_rec", "rec_vs_post", "post_vs_pro"]
+
+stat_comb = (
+  pd.concat([ccht_bio_stat.assign(method="bio"), ccht_uf_stat.assign(method="uf")])
+  .query("`anova p-val` <= 0.05")
+  .pipe(swap_groups, swapper)
+  .assign(comparison=lambda x:
+    pd.Categorical(x.group1 + "_vs_" + x.group2, ordered=True, categories=comp_order)
+  )
+  # the great filter
+  .query("comparison not in @excluder")
+  .dropna(subset=["comparison"])
+  .drop(columns=["group1", "group2"])
+  .reset_index(drop=True)
+)
+
+base_chart = alt.Chart(stat_comb).encode(
+  x=alt.X("celltype:N", axis=alt.Axis(labelAngle=-45)),
+  y=alt.Y("comparison:N", sort=comp_order),
+)
+
+heatmap = base_chart.mark_rect().encode(color=alt.Color("meandiff:Q"))
+text_overlay = base_chart.mark_text().encode(
+  text=alt.when(alt.datum.reject).then(alt.value("*")).otherwise(alt.value(""))
+  )
+
+(heatmap + text_overlay).properties(
+    width=800,
+    height=150
+  )
+
 
 ```
 
