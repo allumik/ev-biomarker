@@ -248,7 +248,7 @@ loadings_combined = (
 loadings_plt = alt.Chart(loadings_combined).mark_line(
     point=alt.OverlayMarkDef(filled=False, fill="white", size=10)
   ).encode(
-  x=alt.X("Feature:N", sort=None, axis=alt.Axis(labelAngle=-60)),
+  x=alt.X("Feature:N", sort=None).axis(labelAngle=-60),
   y=alt.Y("Variance Explained:Q"),
   color=alt.Color("Group:N")
 ).properties(
@@ -266,6 +266,7 @@ loadings_plt.show()
 Here we create a visual representation of the statistical testing and correlation analysis results of the UF and Biopsy samples. We present the most statistically significant changes throughout the cycle phases.
 
 ```{python}
+## data manipulation for the plot
 
 def swap_groups(df, to_swap):
   for g1, g2 in to_swap:
@@ -280,53 +281,92 @@ def swap_groups(df, to_swap):
   return df
 
 swapper = [("post", "rec"), ("rec", "pre"), ("pre", "pro")]
-excluder = ["post_vs_pre", "pro_vs_rec"]
-comp_order = ["pro_vs_pre", "pre_vs_rec", "rec_vs_post", "post_vs_pro"]
+excluder = ["post_vs_pre", "pro_vs_rec", "post_vs_pro"]
+comp_order = ["pro_vs_pre", "pre_vs_rec", "rec_vs_post"]
+cycle_order = ["pro", "pre", "rec", "post"]
 
 stat_comb = (
   pd.concat([ccht_bio_stat.assign(method="bio"), ccht_uf_stat.assign(method="uf")])
-  .query("`anova p-val` <= 0.05")
+  .query("`anova p-val` <= 0.05 and method == 'uf'")
   .pipe(swap_groups, swapper)
-  .assign(comparison=lambda x:
-    pd.Categorical(x.group1 + "_vs_" + x.group2, ordered=True, categories=comp_order)
+  .assign(
+    comparison=lambda x:
+      pd.Categorical(x.group1 + "_vs_" + x.group2, ordered=True, categories=comp_order),
+    p_stars=lambda x:
+      np.select([ x["p-adj"] <= 0.001, x["p-adj"] <= 0.01, x["p-adj"] <= 0.05, True], ["***", "**", "*", ""]),
+    meandiff_format=lambda x: "Δ " + round(x.meandiff * 100, 2).astype(str) + "%",
+    padj_format=lambda x: np.where(x["p-adj"] < 0.01, "FDR <0.01", "FDR " + round(x["p-adj"], 2).astype(str))
   )
   # the great filter
   .query("comparison not in @excluder")
   .dropna(subset=["comparison"])
-  .drop(columns=["group1", "group2"])
+  .join(general_cells, on="celltype")
+  .sort_values(["lineage", "celltype"])
   .reset_index(drop=True)
 )
 
+# create a dummy dataframe which takes the first celltype in the table and creates coordinates for the overriden y-axis ticks
+stat_tmp = pd.DataFrame({
+  "base": cycle_order, 
+  "celltype": stat_comb["celltype"][0], 
+  "loc": np.linspace(0,1,len(cycle_order))
+  })
+
+```
+
+```{python}
+## the plotting part
+
+# set up basechart for the X axis, sadly we'll have to redefine the Y axis for 
+# both the text and heatmap due to differences in handling of ticks
 base_chart = alt.Chart(stat_comb).encode(
-  x=alt.X("celltype:N", axis=alt.Axis(labelAngle=-45)),
-  y=alt.Y("comparison:N", sort=comp_order),
+  x=alt.X("celltype:N", sort=stat_comb.celltype.drop_duplicates().values).axis(labelAngle=-45),
+  y=alt.Y("comparison:N", sort=comp_order[::-1]).axis(labels=False, tickBand="extent", title=None)
 )
 
-heatmap = base_chart.mark_rect().encode(color=alt.Color("meandiff:Q"))
-text_overlay = base_chart.mark_text().encode(
-  text=alt.when(alt.datum.reject).then(alt.value("*")).otherwise(alt.value(""))
+heatmap = base_chart.mark_rect().encode(
+  color=alt.Color("meandiff:Q").scale(scheme="blueorange", domain=[-.2,.2])
   )
 
-(heatmap + text_overlay).properties(
-    width=800,
-    height=150
-  )
+# the significance testing texty part
+base_text = base_chart.encode(
+  # have to override yaxis ticks here, otherwise it'll add it to the right side later
+  y=alt.Y("comparison:N", sort=comp_order[::-1]).axis(labels=False, ticks=False, title=None) 
+)
+text_overlay_stars = base_text.mark_text(fontWeight="bold", fontSize=24, dy=-6).encode(
+  text=alt.Text("p_stars"))
+text_overlay_diff = base_text.mark_text(fontSize=10, dy=14).encode(
+  text=alt.when(alt.datum.reject).then(alt.Text("meandiff_format:N")))
+text_overlay_pval = base_text.mark_text(fontSize=10, dy=2).encode(
+  text=alt.when(alt.datum.reject).then(alt.Text("padj_format:N")))
 
+# create a pseudoaxis plot where we take the first value 
+yaxis_group = alt.Chart(stat_tmp).mark_text(clip=False).encode(
+  x=alt.X("celltype:N", sort=stat_comb.celltype.drop_duplicates().values),
+  y=alt.Y("loc:Q").axis(None),
+  xOffset=alt.value(-25),
+  text=alt.Text("base")
+)
+
+# create another pseudoaxis plot to show the lineages of celltypes
+xaxis_group_colors = alt.Chart(stat_comb).mark_rect().encode(
+  x=alt.X("celltype:N", sort=stat_comb.celltype.drop_duplicates().values).axis(labelAngle=-45),
+  color=alt.Color("lineage:N")
+)
+
+((heatmap + text_overlay_stars + text_overlay_diff + text_overlay_pval + yaxis_group) | xaxis_group_colors).properties(
+  width=800,
+  height=150
+)
 
 ```
 
 :::
 
-Combining them all into one.
+combining them all into one.
 
 ```{python}
 # have to resolve the color scale, otherwise the loadings_plt will override the biplot's scale
 (peruvian_bio_ev | (biplot & loadings_plt).resolve_scale(color="independent")).show()
 # below both of them there should be the directionality plot of DE proportions
-```
-
-## Fig 2 
-
-```{python}
-
 ```
