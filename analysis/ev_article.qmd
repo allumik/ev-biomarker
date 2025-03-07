@@ -502,17 +502,15 @@ base_heatmap = alt.Chart(corr_mat).mark_rect().encode(
   )
 
 # Create vertical lines layer TODO
-lines = alt.Chart(
-    pd.DataFrame({"x": np.cumsum(gaps)})
-  ).mark_rule(
-    color="black", strokeWidth=2
-  ).encode(
-    x=alt.X("x:Q", axis=None),
-    size=alt.value(2)
-  )
+x_lines = alt.Chart(
+    pd.DataFrame({"x": [corr_mat.x_vars[i-1] for i in np.cumsum(gaps)]})
+  ).mark_rule(color="white", strokeWidth=2).encode(x=alt.X("x:O"), xOffset=alt.value(0))
+y_lines = alt.Chart(
+    pd.DataFrame({"y": [corr_mat.y_vars[i-1] for i in np.cumsum(gaps)]})
+  ).mark_rule(color="white", strokeWidth=2).encode(y=alt.Y("y:O"), yOffset=alt.value(0))
 
 # Layer heatmap and lines
-final_chart = (base_heatmap + lines).resolve_scale(
+final_chart = (base_heatmap + x_lines + y_lines).resolve_scale(
   x='shared', y='shared', color='independent'
 )
 
