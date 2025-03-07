@@ -82,6 +82,17 @@ def geometric_mean(row):
     else:
         return np.nan
 
+# Function to calculate statistics for each group
+def calculate_stats(group):
+  if len(group) == 2:
+    ratio_uf = group.iloc[0]
+    ratio_biopsy = group.iloc[1]
+    correlation, p_value = spearmanr(ratio_uf, ratio_biopsy)
+    mean_difference = np.abs(ratio_biopsy.mean() - ratio_uf.mean())
+    return pd.Series({'Correlation': correlation, 'P-value': p_value, 'Abs Mean Diff': mean_difference})
+  else:
+    return None
+
 
 
 # %% Functions for plotting
