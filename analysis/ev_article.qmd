@@ -452,31 +452,29 @@ Here we focus on the comparison of the paired sample profiles from **both** biop
 
 ```{python}
 # calculate the correlation matrix and prepare data for the plot
+# first we create a phenotype file to order the samples after
 prepped_pheno = (
   ccht_uf_pheno
   .loc[frac_pred.index]
   .assign(HUT=lambda x: x.index.str.extract(r"(HUT\d+)", expand=False))
+  .sort_values(["cyclephase", "HUT"])
 )
 
 # select only samples with corresponding HUT pair
 paired_samples_stem = prepped_pheno.HUT.value_counts().to_frame().query("count > 1").index
 prepped_pheno = prepped_pheno.query("HUT in @paired_samples_stem")
-prepped_pheno.index.names = ["samplename"]
-prepped_mat = frac_pred.loc[prepped_pheno.index]
 
 # run a corr matrix with itself
 corr_mat = (
-  prepped_mat
-  # reorder the mat per cyclephase grouping
-  .loc[prepped_pheno.sort_values(["cyclephase", "samplename"]).index]
-  .T
-  .corr(method="spearman")
+  # transpose to run correlation against the samples
+  frac_pred.loc[prepped_pheno.index].T.corr(method="spearman")
   # select out only cols with UF in columns and biopsy in rows
   .filter(regex="UF", axis=0).filter(regex="biopsy", axis=1)
-  .stack()
-  .rename("correlation")
-  .to_frame()
-  .reset_index(names=["y_vars", "x_vars"])
+  # stack it into long version for Altair
+  .stack().rename("correlation").to_frame().reset_index(names=["y_vars", "x_vars"])
+  # now add a cols with the locations of last groups
+  .join(prepped_pheno[["cyclephase"]], on="x_vars")
+  .join(prepped_pheno[["cyclephase"]], on="y_vars", lsuffix="_y")
 )
 
 # create a colormap for rows
@@ -486,32 +484,34 @@ lut = dict(zip(
   ))
 # colors for axes
 row_colors = prepped_pheno.cyclephase.astype("object").map(lut)
-# gaps for the gap god
-gaps = prepped_pheno.sort_values("cyclephase").cyclephase.value_counts(sort=False) / 2
-
 ```
 
 ```{python}
 # Create Altair plot
 base_heatmap = alt.Chart(corr_mat).mark_rect().encode(
-    x=alt.X('x_vars:O', sort=corr_mat.x_vars, title=None), # Nominal for categorical x-axis
-    y=alt.Y('y_vars:O', sort=corr_mat.y_vars[::-1], title=None), # Nominal for categorical y-axis
+    x=alt.X('x_vars:O', sort=corr_mat.x_vars.unique(), title=None).axis(offset=10),
+    y=alt.Y('y_vars:O', sort=corr_mat.y_vars.unique(), title=None).axis(orient="right", offset=10),
     color=alt.Color('correlation:Q', scale=alt.Scale(scheme='magma')) # Quantitative for correlation values, using magma colormap
   ).properties(
-    title='Correlation Heatmap of Paired Samples Deconvolution Fractions'
+    title='Correlation of Deconvolution Fractions'
   )
 
-# Create vertical lines layer TODO
-x_lines = alt.Chart(
-    pd.DataFrame({"x": [corr_mat.x_vars[i-1] for i in np.cumsum(gaps)]})
-  ).mark_rule(color="white", strokeWidth=2).encode(x=alt.X("x:O"), xOffset=alt.value(0))
-y_lines = alt.Chart(
-    pd.DataFrame({"y": [corr_mat.y_vars[i-1] for i in np.cumsum(gaps)]})
-  ).mark_rule(color="white", strokeWidth=2).encode(y=alt.Y("y:O"), yOffset=alt.value(0))
+# add the color groupings 
+x_group_colors = base_heatmap.mark_rect().encode(
+  x=alt.X('x_vars:O', sort=corr_mat.x_vars.unique(), title=None), # Nominal for categorical x-axis
+  color=alt.Color("cyclephase:N"),
+  xOffset=alt.value(10), # set it to +10 of the plot height so that it would overlap
+)
 
-# Layer heatmap and lines
-final_chart = (base_heatmap + x_lines + y_lines).resolve_scale(
-  x='shared', y='shared', color='independent'
+y_group_colors = base_heatmap.mark_rect().encode(
+  y=alt.Y('y_vars:O', sort=corr_mat.y_vars.unique(), title=None), # Nominal for categorical x-axis
+  color=alt.Color("cyclephase_y:N").legend(None),
+  yOffset=alt.value(10), # set it to +10 of the plot height so that it would overlap
+)
+
+# Layer heatmap and colors
+final_chart = (x_group_colors + y_group_colors + base_heatmap).resolve_scale(
+  x='shared', y='shared', color='shared'
 )
 
 # Display the chart
