@@ -13,6 +13,7 @@ from sklearn.decomposition import PCA
 import dendro_barplotter
 
 
+
 # %% Statistical testing functoins
 def convert_to_long(fracs, pheno) -> pd.DataFrame:
   # convert to long format
@@ -92,6 +93,32 @@ def calculate_stats(group):
     return pd.Series({'Correlation': correlation, 'P-value': p_value, 'Abs Mean Diff': mean_difference})
   else:
     return None
+
+# For the Dendro Barplot in Altair https://altair-viz.github.io/gallery/dendrogram.html
+def get_leaf_loc(den):
+    """
+    Get the location of the leaves
+    """
+    _from = int(np.array(den["icoord"]).min())
+    _to = int(np.array(den["icoord"]).max() + 1)
+    return range(_from, _to, 10)
+
+def get_df_coord(den):
+    """
+    Get coordinate dataframe.
+    """
+    # if you view the dendrogram as a collection of upside-down "U" shapes, then
+    # we can regard the 4 corners of the upside-down "U" as points 1, 2, 3 and 4.
+    cols_xk = ["xk1", "xk2", "xk3", "xk4"]
+    cols_yk = ["yk1", "yk2", "yk3", "yk4"]
+
+    df_coord = pd.merge(
+        pd.DataFrame(den["icoord"], columns=cols_xk),
+        pd.DataFrame(den["dcoord"], columns=cols_yk),
+        left_index=True,
+        right_index=True
+    )
+    return df_coord
 
 
 

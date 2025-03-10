@@ -517,3 +517,64 @@ final_chart = (x_group_colors + y_group_colors + base_heatmap).resolve_scale(
 # Display the chart
 final_chart
 ```
+
+### Convoluted Deconvolution Plot
+
+
+```{python}
+# the dendrogram part
+linkage_mat = linkage(frac_pred, method="complete", optimal_ordering=True)
+dend_obj = dendrogram(
+    linkage_mat,
+    labels=ccht_uf_pheno.index,
+    no_plot=True
+)
+
+dendro_coord = funk.get_df_coord(dend_obj)
+dendro_marks = pd.DataFrame(dict(labels=dend_obj["ivl"], i=funk.get_leaf_loc(dend_obj)))
+
+base = alt.Chart(dendro_coord)
+
+# the U shape is composed of a shoulder plus two arms, made with separate lines...
+shoulder = base.mark_rule().encode(
+    alt.X("xk2:Q", title="").axis(None),
+    alt.X2("xk3:Q"),
+    alt.Y("yk2:Q", title=""))
+arm1 = base.mark_rule().encode(
+    alt.X("xk1:Q"),
+    alt.Y("yk1:Q"),
+    alt.Y2("yk2:Q"))
+arm2 = base.mark_rule().encode(
+    alt.X("xk3:Q"),
+    alt.Y("yk3:Q"),
+    alt.Y2("yk4:Q"))
+
+chart_den = ((shoulder + arm1 + arm2) & chart_text).resolve_scale(x="shared")
+```
+
+```{python}
+# the barplot part
+# make fracs long again - reuse previous funk.peruvian_transform
+fractions_long = (
+  funk.peruvian_transform(
+    fractions=frac_pred,
+    phenotype=ccht_uf_pheno,
+    general_cells=general_cells
+  )
+  .rename(columns={"level_0": "samplename"})
+  .set_index("samplename")
+  # reorder based on the dendro order
+  .loc[dend_obj["ivl"]]
+  .reset_index()
+)
+
+base_bar = alt.Chart(fractions_long, view=alt.ViewConfig(strokeWidth=0)).mark_bar().encode(
+  x=alt.X("samplename:N").axis(grid=False),
+  y=alt.Y("fractions:Q").axis(grid=False).scale(domain=[0,1]),
+  color=alt.Color("celltype:N").legend(columns=2)
+)
+```
+
+```{python}
+(chart_den & base_bar).resolve_axis(x="shared")
+```
