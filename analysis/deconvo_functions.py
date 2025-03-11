@@ -94,15 +94,6 @@ def calculate_stats(group):
   else:
     return None
 
-# For the Dendro Barplot in Altair https://altair-viz.github.io/gallery/dendrogram.html
-def get_leaf_loc(den):
-    """
-    Get the location of the leaves
-    """
-    _from = int(np.array(den["icoord"]).min())
-    _to = int(np.array(den["icoord"]).max() + 1)
-    return range(_from, _to, 10)
-
 def get_df_coord(den):
     """
     Get coordinate dataframe.
