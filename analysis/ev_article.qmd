@@ -448,6 +448,100 @@ Here we focus on the comparison of the paired sample profiles from **both** biop
 
 ::: {.panel-tabset}
 
+### Convoluted Deconvolution Plot
+
+```{python}
+# the dendrogram part
+linkage_mat = linkage(frac_pred, method="complete", optimal_ordering=True)
+dend_obj = dendrogram( linkage_mat, labels=ccht_uf_pheno.index, no_plot=True)
+dendro_marks = pd.DataFrame({"labels": dend_obj["ivl"]}).reset_index().rename(columns={"index": "i"})
+dendro_coord = funk.get_df_coord(dend_obj)
+
+# and transform the x and y coords to a suitable scale
+scaler = .25
+cols_xk = ["xk1", "xk2", "xk3", "xk4"]
+cols_yk = ["yk1", "yk2", "yk3", "yk4"]
+x_min, x_max = (dendro_coord[cols_xk].min(axis=None), dendro_coord[cols_xk].max(axis=None))
+dendro_coord[cols_xk] = (dendro_coord[cols_xk] - x_min) / (x_max - x_min)
+dendro_coord[cols_xk] *= (dendro_marks.shape[0] - 1)
+dendro_coord[cols_yk] *= scaler/dendro_coord[cols_yk].max(axis=None) # scale the y heights
+dendro_coord[cols_yk] += 1.18 # and shift up whole unit
+
+base = alt.Chart(dendro_coord, view=alt.ViewConfig(strokeWidth=0))
+# the U shape is composed of a shoulder plus two arms, made with separate lines...
+shoulder = base.mark_rule().encode(
+    x=alt.X("xk2:Q", title="").axis(grid=False).scale(domain=[0,len(custom_labels)-1]),
+    x2=alt.X2("xk3:Q"),
+    y=alt.Y("yk2:Q", title="").axis(None))
+arm1 = base.mark_rule().encode(
+    x=alt.X("xk1:Q").axis(grid=False).scale(domain=[0,len(custom_labels)-1]),
+    y=alt.Y("yk1:Q").axis(None),
+    y2=alt.Y2("yk2:Q"))
+arm2 = base.mark_rule().encode(
+    x=alt.X("xk3:Q").axis(grid=False).scale(domain=[0,len(custom_labels)-1]),
+    y=alt.Y("yk3:Q").axis(None),
+    y2=alt.Y2("yk4:Q"))
+
+# chart_den = (shoulder + arm1 + arm2).properties(width=.98*plt_width, height=50)
+chart_den = shoulder + arm1 + arm2
+```
+
+```{python}
+# the barplot part
+# make fracs long again - reuse previous funk.peruvian_transform
+fractions_long = (
+  funk.peruvian_transform(
+    fractions=frac_pred,
+    phenotype=ccht_uf_pheno,
+    general_cells=general_cells
+  )
+  .rename(columns={"level_0": "samplename"})
+  .set_index("samplename")
+  .join(dendro_marks.set_index("labels"))
+  .join(ccht_uf_pheno)
+  .reset_index()
+  .sort_values("i")
+)
+
+custom_labels = fractions_long.samplename.drop_duplicates().values.tolist()
+# custom printer - by default the list is printed with newlines so that the js parses the list transposed
+custom_labels_str =  ', '.join(f"'{label}'" for label in custom_labels)
+
+base_bar = alt.Chart(fractions_long, view=alt.ViewConfig(strokeWidth=0))
+barplot = base_bar.mark_bar(
+  width=8
+).encode(
+  x=alt.X("i:Q").axis(
+      title=None, grid=False, domain=False,
+      tickCount=len(custom_labels),
+      labelAngle=90,
+      labelOverlap=False, 
+      labelExpr=f"[{custom_labels_str}][datum.value]" # custom label values mapped
+    ).scale(domain=[0,len(custom_labels)-1], padding=10),
+  y=alt.Y("fractions:Q").axis(grid=False).scale(domain=[0,1]),
+  color=alt.Color("celltype:N").scale(scheme="tableau20").legend(columns=2)
+  )
+
+# add the color groupings 
+x_cycle_colors = barplot.mark_rect(clip=False, width=14).encode(
+    y=alt.value(0), # for some reason this works
+    y2=alt.value(-4),
+    yOffset=alt.value(-12),
+    color=alt.Color("cyclephase:N")
+  )
+x_method_colors = barplot.mark_rect(clip=False, width=14).encode(
+    y=alt.value(0), # for some reason this works
+    y2=alt.value(-16),
+    yOffset=alt.value(-24),
+    color=alt.Color("group:N")
+  )
+
+```
+
+```{python}
+(chart_den + barplot + x_cycle_colors + x_method_colors).resolve_scale(x="shared", y="shared", color="independent").resolve_axis(y="independent").properties(width=500, height=150)
+```
+
 ### Correlation Heatmap of the Paired Samples {.unnumbered .unlisted}
 
 ```{python}
@@ -516,69 +610,4 @@ final_chart = (x_group_colors + y_group_colors + base_heatmap).resolve_scale(
 
 # Display the chart
 final_chart
-```
-
-### Convoluted Deconvolution Plot
-
-```{python}
-# the dendrogram part
-linkage_mat = linkage(frac_pred, method="complete", optimal_ordering=True)
-dend_obj = dendrogram( linkage_mat, labels=ccht_uf_pheno.index, no_plot=True)
-dendro_coord = funk.get_df_coord(dend_obj)
-
-# and transform the x and y coords to a suitable scale
-scaler = .3
-cols_xk = ["xk1", "xk2", "xk3", "xk4"]
-cols_yk = ["yk1", "yk2", "yk3", "yk4"]
-dendro_coord[cols_xk] -= dendro_coord[cols_xk].min(axis=None)
-dendro_coord[cols_xk] /= dendro_coord[cols_xk].max(axis=None) # scale the coordinates to 0..1 domain
-dendro_coord[cols_yk] *= scaler/dendro_coord[cols_yk].max(axis=None) # scale the y heights
-dendro_coord[cols_yk] += 1 # and shift up whole unit
-
-base = alt.Chart(dendro_coord, view=alt.ViewConfig(strokeWidth=0))
-# the U shape is composed of a shoulder plus two arms, made with separate lines...
-shoulder = base.mark_rule().encode(
-    x=alt.X("xk2:Q", title="").axis(None),
-    x2=alt.X2("xk3:Q"),
-    y=alt.Y("yk2:Q", title="").axis(None))
-arm1 = base.mark_rule().encode(
-    x=alt.X("xk1:Q").axis(None),
-    y=alt.Y("yk1:Q").axis(None),
-    y2=alt.Y2("yk2:Q"))
-arm2 = base.mark_rule().encode(
-    x=alt.X("xk3:Q").axis(None),
-    y=alt.Y("yk3:Q").axis(None),
-    y2=alt.Y2("yk4:Q"))
-
-# chart_den = (shoulder + arm1 + arm2).properties(width=.98*plt_width, height=50)
-chart_den = shoulder + arm1 + arm2
-```
-
-```{python}
-# the barplot part
-dendro_marks = pd.DataFrame({"labels": dend_obj["ivl"], "i": np.linspace(0, 1, len(dend_obj["ivl"]))})
-
-# make fracs long again - reuse previous funk.peruvian_transform
-fractions_long = (
-  funk.peruvian_transform(
-    fractions=frac_pred,
-    phenotype=ccht_uf_pheno,
-    general_cells=general_cells
-  )
-  .rename(columns={"level_0": "samplename"})
-  .set_index("samplename")
-  .join(dendro_marks.set_index("labels"))
-  .reset_index()
-  .sort_values("i")
-)
-
-base_bar = alt.Chart(fractions_long, view=alt.ViewConfig(strokeWidth=0))
-barplot = base_bar.mark_bar(width=alt.RelativeBandSize(1)).encode(
-  x=alt.X("i:Q").axis(None),
-  y=alt.Y("fractions:Q").axis(grid=False).scale(domain=[0,1]),
-  color=alt.Color("celltype:N").legend(columns=2))
-```
-
-```{python}
-(chart_den + barplot).resolve_scale(x="shared", y="shared").resolve_axis(y="independent")
 ```
