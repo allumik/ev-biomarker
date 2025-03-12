@@ -470,15 +470,15 @@ dendro_coord[cols_yk] += 1.18 # and shift up whole unit
 base = alt.Chart(dendro_coord, view=alt.ViewConfig(strokeWidth=0))
 # the U shape is composed of a shoulder plus two arms, made with separate lines...
 shoulder = base.mark_rule().encode(
-    x=alt.X("xk2:Q", title="").axis(grid=False).scale(domain=[0,len(custom_labels)-1]),
+    x=alt.X("xk2:Q", title="").axis(grid=False).scale(domain=[0,len(dend_obj["ivl"])-1]),
     x2=alt.X2("xk3:Q"),
     y=alt.Y("yk2:Q", title="").axis(None))
 arm1 = base.mark_rule().encode(
-    x=alt.X("xk1:Q").axis(grid=False).scale(domain=[0,len(custom_labels)-1]),
+    x=alt.X("xk1:Q").axis(grid=False).scale(domain=[0,len(dend_obj["ivl"])-1]),
     y=alt.Y("yk1:Q").axis(None),
     y2=alt.Y2("yk2:Q"))
 arm2 = base.mark_rule().encode(
-    x=alt.X("xk3:Q").axis(grid=False).scale(domain=[0,len(custom_labels)-1]),
+    x=alt.X("xk3:Q").axis(grid=False).scale(domain=[0,len(dend_obj["ivl"])-1]),
     y=alt.Y("yk3:Q").axis(None),
     y2=alt.Y2("yk4:Q"))
 
