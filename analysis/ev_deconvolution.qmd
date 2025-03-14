@@ -47,13 +47,13 @@ from matplotlib.patches import Patch
 from sklearn.preprocessing import normalize
 
 ## import the functions used in this report (got too long to include them in the report)
-import deconvo_functions as funk
+import analysis.deconvo_functions as funk
 
 ## Do you want to rerun all the models?
 rerun_all = False
 
 ## load the environment variables from the .env file
-load_dotenv()
+load_dotenv(Path.cwd() / ".env")
 
 anndata_folder = getenv("ANNDATA_FOLDER")
 atlas_folder = getenv("ATLAS_FOLDER")
@@ -384,7 +384,7 @@ funk.peruvian_sands(
 Apply PCA on the proportions.
 
 ```{python}
-funk.biplot_fractions(frac_pred, comb_uf_pheno, hue="cyclephase", palette="Set1", style="group")
+funk.biplot_fractions(frac_pred, comb_uf_pheno, color_field="cyclephase", style_field="group")[0]
 ```
 
 Or **by major cell types**:
@@ -410,7 +410,7 @@ funk.peruvian_sands(
     ),
   legend_col_n=1
 ).show()
-funk.biplot_fractions(frac_pred_gen, comb_uf_pheno, hue="cyclephase", palette="Set1", style="group")
+funk.biplot_fractions(frac_pred_gen, comb_uf_pheno, color_field="cyclephase", style_field="group")[0]
 """
 
 # generate a temporary file and write the logic there
@@ -543,7 +543,7 @@ funk.peruvian_sands(
 Apply PCA on the proportions.
 
 ```{python}
-funk.biplot_fractions(frac_tmp, comb_uf_pheno, hue="cyclephase", palette="Set1", style="group")
+funk.biplot_fractions(frac_tmp, comb_uf_pheno, color_field="cyclephase", style_field="group")[0]
 ```
 
 Or **by major cell types**:
@@ -569,7 +569,7 @@ funk.peruvian_sands(
     ),
   legend_col_n=1
 ).show()
-funk.biplot_fractions(frac_pred_gen, comb_uf_pheno, hue="cyclephase", palette="Set1", style="dataset")
+funk.biplot_fractions(frac_pred_gen, comb_uf_pheno, color_field="cyclephase", style_field="dataset")[0]
 """
 
 # generate a temporary file and write the logic there
@@ -704,7 +704,7 @@ funk.peruvian_sands(
 Apply PCA on the proportions.
 
 ```{python}
-funk.biplot_fractions(frac_tmp, comb_uf_pheno, hue="cyclephase", palette="Set1", style="dataset")
+funk.biplot_fractions(frac_tmp, comb_uf_pheno, color_field="cyclephase", style_field="dataset")[0]
 ```
 
 Or **by major cell types**:
@@ -845,7 +845,7 @@ funk.peruvian_sands(
 Apply PCA on the proportions.
 
 ```{python}
-funk.biplot_fractions(frac_pred, ccht_uf_pheno, hue="cyclephase", palette="Set1", style="group")
+funk.biplot_fractions(frac_pred, ccht_uf_pheno, color_field="cyclephase", style_field="group")[0]
 ```
 
 Or **by major cell types**:
@@ -871,7 +871,7 @@ funk.peruvian_sands(
     ),
   legend_col_n=1
 ).show()
-funk.biplot_fractions(frac_pred_gen, ccht_uf_pheno, hue="cyclephase", palette="Set1", style="group")
+funk.biplot_fractions(frac_pred_gen, ccht_uf_pheno, color_field="cyclephase", style_field="group")[0]
 """
 
 # generate a temporary file and write the logic there
@@ -988,7 +988,7 @@ funk.peruvian_sands(
 Apply PCA on the proportions.
 
 ```{python}
-funk.biplot_fractions(frac_tmp, ccht_uf_pheno, hue="cyclephase", palette="Set1")
+funk.biplot_fractions(frac_tmp, ccht_uf_pheno, color_field="cyclephase")[0]
 ```
 
 Or **by major cell types**:
@@ -1014,7 +1014,7 @@ funk.peruvian_sands(
     ),
   legend_col_n=1
 ).show()
-funk.biplot_fractions(frac_pred_gen, ccht_uf_pheno, hue="cyclephase", palette="Set1")
+funk.biplot_fractions(frac_pred_gen, ccht_uf_pheno, color_field="cyclephase")[0]
 """
 
 # generate a temporary file and write the logic there
@@ -1131,7 +1131,7 @@ funk.peruvian_sands(
 Apply PCA on the proportions.
 
 ```{python}
-funk.biplot_fractions(frac_tmp, ccht_uf_pheno, hue="cyclephase", palette="Set1")
+funk.biplot_fractions(frac_tmp, ccht_uf_pheno, color_field="cyclephase")[0]
 ```
 
 Or **by major cell types**:
@@ -1240,8 +1240,8 @@ Apply PCA on the proportions.
 funk.biplot_fractions(
   frac_pred, scratch_pheno,
   legend_title="RIF stage",
-  hue="status_rif", palette="flare", style="no_lb"
-  )
+  color_field="status_rif", style_field="no_lb" #, palette="flare"
+  )[0]
 
 ```
 
@@ -1271,8 +1271,8 @@ funk.dendro_barplot(
 funk.biplot_fractions(
   frac_pred_gen, scratch_pheno,
   legend_title="RIF stage",
-  hue="status_rif", palette="flare", style="no_lb"
-)
+  color_field="status_rif", style_field="no_lb" #, palette="flare"
+)[0]
 """
 
 # generate a temporary file and write the logic there
@@ -1404,8 +1404,8 @@ Apply PCA on the proportions.
 funk.biplot_fractions(
   frac_pred, clin_uf_pheno, 
   legend_title="Implantation", 
-  hue="implantation", palette="Set1"
-)
+  color_field="implantation"
+)[0]
 
 ```
 
@@ -1435,8 +1435,8 @@ funk.dendro_barplot(
 funk.biplot_fractions(
   frac_pred_gen, clin_uf_pheno, 
   legend_title="Implantation", 
-  hue="implantation", palette="Set1" 
-)
+  color_field="implantation" 
+)[0]
 """
 
 # generate a temporary file and write the logic there
