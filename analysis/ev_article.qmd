@@ -35,7 +35,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from os import getenv
 from sklearn.decomposition import PCA
-from vega_datasets import data
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from sklearn.preprocessing import normalize
 
@@ -170,21 +169,35 @@ frac_params = {
 
 ## FIG 1: Study Design
 
+::: {.panel-tabset}
+
+### Select a tab: {.unnumbered .unlisted}
+
 ### Analysis Steps {.unnumbered .unlisted}
 
 ```{python}
-# load in the exported svg
-schema_svg = Path(f"{proj_folder}/manuscript/ev_wf_schema.svg")
-if schema_svg.exists():
-  study_schema = alt.Chart(data=alt.Data(url=str(schema_svg), format=alt.DataFormat(type="svg")))
-  study_schema.show()
-else:
-  print("Could not find the schema SVG file.")
+# placeholder image
+study_schema = funk.spacer_with_text(height=200, width=400)
 ```
+
+### Overview of the Samples {.unnumbered .unlisted}
+
+```{python}
+# barplot of the number of samples throughout the cycle phase
+
+# include single cell data overview as extra column
+
+```
+
+### UMAP of the samples? {.unnumbered .unlisted}
+
+### Feature Counts? {.unnumbered .unlisted}
 
 ## FIG 2: Cell Type Deconvolution Profiles throughout the Menstrual Cycle
 
 ::: {.panel-tabset}
+
+### Select a tab: {.unnumbered .unlisted}
 
 ### Proportions Plot of both Biopsy and EV {.unnumbered .unlisted}
 
@@ -463,7 +476,9 @@ Here we focus on the comparison of the paired sample profiles from **both** biop
 
 ::: {.panel-tabset}
 
-### Convoluted Deconvolution Plot
+### Select a tab: {.unnumbered .unlisted}
+
+### Convoluted Deconvolution Plot {.unnumbered .unlisted}
 
 ```{python}
 # the dendrogram part
@@ -628,8 +643,13 @@ final_chart = (x_group_colors + y_group_colors + base_heatmap).resolve_scale(
 final_chart
 ```
 
-
 ### Venn diagram of the DE genes {.unnumbered .unlisted}
+
+```{python}
+
+```
+
+:::
 
 ```{python}
 (dendro_barplot & final_chart).resolve_scale(color="independent").show()

@@ -441,7 +441,7 @@ def peruvian_grouped(
 
 
 # simple placeholder image generator, use it for composite images where you'll put the image in later
-def spacer_with_text(text, width=200, height=100, text_size=14, text_color='gray'):
+def spacer_with_text(text="[insert plot here]", width=200, height=100, text_size=14, text_color='gray'):
   """Creates a spacer plot with placeholder text centered in the middle.
 
   Args:
@@ -455,9 +455,9 @@ def spacer_with_text(text, width=200, height=100, text_size=14, text_color='gray
       An Altair Chart object representing the spacer plot.
   """
 
-  data = pd.DataFrame({'x': [0], 'y': [0], 'text': [text]})
-
-  spacer = alt.Chart(data).mark_text(
+  return alt.Chart(
+    pd.DataFrame({'x': [0], 'y': [0], 'text': [text]})
+  ).mark_text(
     size=text_size,
     color=text_color,
     align='center',
@@ -470,5 +470,3 @@ def spacer_with_text(text, width=200, height=100, text_size=14, text_color='gray
     width=width,
     height=height
   )
-
-  return spacer
