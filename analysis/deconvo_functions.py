@@ -438,3 +438,37 @@ def peruvian_grouped(
     y='independent',
     color='independent' # Keep color scale independent - legends are now handled manually
   )
+
+
+# simple placeholder image generator, use it for composite images where you'll put the image in later
+def spacer_with_text(text, width=200, height=100, text_size=14, text_color='gray'):
+  """Creates a spacer plot with placeholder text centered in the middle.
+
+  Args:
+      text: The placeholder text to display.
+      width: The width of the spacer plot.
+      height: The height of the spacer plot.
+      text_size: The size of the placeholder text.
+      text_color: The color of the placeholder text.
+
+  Returns:
+      An Altair Chart object representing the spacer plot.
+  """
+
+  data = pd.DataFrame({'x': [0], 'y': [0], 'text': [text]})
+
+  spacer = alt.Chart(data).mark_text(
+    size=text_size,
+    color=text_color,
+    align='center',
+    baseline='middle'
+  ).encode(
+    x=alt.value(width / 2),  # Center horizontally
+    y=alt.value(height / 2), # Center vertically
+    text='text'
+  ).properties(
+    width=width,
+    height=height
+  )
+
+  return spacer

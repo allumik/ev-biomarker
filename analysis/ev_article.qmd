@@ -30,12 +30,12 @@ import scanpy as sc
 import anndata as an
 import numpy as np
 import altair as alt
-import seaborn as sns
 from IPython.display import HTML
 from pathlib import Path
 from dotenv import load_dotenv
 from os import getenv
 from sklearn.decomposition import PCA
+from vega_datasets import data
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from sklearn.preprocessing import normalize
 
@@ -45,6 +45,7 @@ import deconvo_functions as funk
 ## load the environment variables from the .env file
 load_dotenv()
 
+proj_folder = getenv("PROJ_FOLDER")
 anndata_folder = getenv("ANNDATA_FOLDER")
 atlas_folder = getenv("ATLAS_FOLDER")
 data_folder = getenv("DATA_FOLDER")
@@ -140,7 +141,7 @@ Downstream analysis was done in R and Python programming languages. For differen
 
 ## TAPE model parameters
 
-This study is based on cell type deconvolution of bulk RNA-seq samples using scRNA-seq reference. For deconvolution analysis we used the [TAPE](https://www.nature.com/articles/s41467-022-34550-9) algorithm and trained the model using the (HECA)[https://doi.org/10.1101/2023.11.03.564728] endometrial cell atlas.
+This study is based on cell type deconvolution of bulk RNA-seq samples using scRNA-seq reference. For deconvolution analysis we used the [TAPE](https://www.nature.com/articles/s41467-022-34550-9) algorithm and trained the model using the [HECA](https://doi.org/10.1101/2023.11.03.564728) endometrial cell atlas.
 
 ```{python}
 #| output: echo
@@ -167,7 +168,21 @@ frac_params = {
 
 # Results with Figures
 
-## FIG 1: Cell Type Deconvolution Throughout the Menstrual Cycle
+## FIG 1: Study Design
+
+### Analysis Steps {.unnumbered .unlisted}
+
+```{python}
+# load in the exported svg
+schema_svg = Path(f"{proj_folder}/manuscript/ev_wf_schema.svg")
+if schema_svg.exists():
+  study_schema = alt.Chart(data=alt.Data(url=str(schema_svg), format=alt.DataFormat(type="svg")))
+  study_schema.show()
+else:
+  print("Could not find the schema SVG file.")
+```
+
+## FIG 2: Cell Type Deconvolution Profiles throughout the Menstrual Cycle
 
 ::: {.panel-tabset}
 
@@ -442,7 +457,7 @@ Combining them all into one.
 # below both of them there should be the directionality plot of DE proportions
 ```
 
-## FIG 2: Comparison of Biopsy and EV Sampling Methods
+## FIG 3: Comparison of Biopsy and EV Sampling Methods
 
 Here we focus on the comparison of the paired sample profiles from **both** biopsy and UF origin.
 
@@ -539,7 +554,8 @@ x_method_colors = barplot.mark_rect(clip=False, width=14).encode(
 ```
 
 ```{python}
-(chart_den + barplot + x_cycle_colors + x_method_colors).resolve_scale(x="shared", y="shared", color="independent").resolve_axis(y="independent").properties(width=500, height=150)
+dendro_barplot = (chart_den + barplot + x_cycle_colors + x_method_colors).resolve_scale(x="shared", y="shared", color="independent").resolve_axis(y="independent").properties(width=500, height=150)
+dendro_barplot.show()
 ```
 
 ### Correlation Heatmap of the Paired Samples {.unnumbered .unlisted}
@@ -610,4 +626,11 @@ final_chart = (x_group_colors + y_group_colors + base_heatmap).resolve_scale(
 
 # Display the chart
 final_chart
+```
+
+
+### Venn diagram of the DE genes {.unnumbered .unlisted}
+
+```{python}
+(dendro_barplot & final_chart).resolve_scale(color="independent").show()
 ```
