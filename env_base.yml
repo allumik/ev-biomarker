@@ -40,6 +40,7 @@ dependencies:
     - pylance
     - matplotlib
     - dash-bio
+    - tangram-sc
 
   # GPU stuff
   # pytorch 2.0.1 is the last one to support cuda 11.7

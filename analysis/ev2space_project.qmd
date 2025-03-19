@@ -42,7 +42,7 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 
 ## Do you want to rerun all the models?
-rerun_all = False
+rerun_all = True
 
 ## load the environment variables from the .env file
 load_dotenv()
@@ -83,63 +83,9 @@ Load in the data, filter out "Hormones" celltypes and non-endometriotic samples 
 ```{python}
 #| output: false
 
-## Load the main HECA dataset
-sc_dat = sc.read_h5ad(
-  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_with_counts.h5ad",
-  backed = "r"
-)
-
-sc_dat_immu = sc.read_h5ad(
-  Path(raw_data_folder).expanduser() / "endometriumAtlasV2_cells_immune.h5ad",
-  backed = "r"
-)
-
-# check for the immune cell barcodes in the 
-# np.unique(np.isin(sc_dat.obs.query("lineage == 'Immune'").index.to_numpy(), sc_dat_immu.obs.index.to_numpy()), return_counts=True)
-# np.unique(np.isin(sc_dat_immu.obs.index.to_numpy(), sc_dat.obs.query("lineage == 'Immune'").index.to_numpy()), return_counts=True)
-
-sc_dat.obs = (
-  sc_dat.obs
-  .assign(
-    cyclephase=lambda x: x.Stage.replace(replace_dict).astype("category"),
-    celltype=lambda x: 
-      x.celltype
-      .astype("object")
-      .mask(
-        x.index.isin(sc_dat_immu.obs.celltype.index), 
-        sc_dat_immu.obs.celltype.astype("object")
-      ),
-    label_long=lambda x: 
-      x.label_long
-      .astype("object")
-      .mask(
-        x.index.isin(sc_dat_immu.obs.label_long.index), 
-        sc_dat_immu.obs.label_long.astype("object")
-      )
-      .astype("category")
-  )
-  .rename(columns={"sample": "samplename"})
-  # now generalise the cell types for better deconvolution classes
-  .assign(celltype=lambda x: x.celltype.replace(inv_replace_immu).astype("category"))
-)
-
-# load the object into memory for the double indexing that is going to happen
-sc_dat = sc_dat.to_memory()
-
-## also exclude the endometriosis samples
-the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
-sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].copy() # have to copy to "deview" it
-
-## exclude some celltypes, such as she hormones cell types and poorly represented samples
-count_tmp = sc_dat.obs.celltype.value_counts()
-no_go_celltype = list(count_tmp[count_tmp < 100].index) + ['eHormones', 'sHormones', 'dHormones']
-sc_dat = sc_dat[sc_dat.obs.query("celltype not in @no_go_celltype").index, :]
-
-
-sc_dat = ov.pp.preprocess(sc_dat.to_memory(), mode="shiftlog|pearson", n_HVGs=3000, target_sum=1e4)
-# sc_dat = sc_dat[:, sc_dat.var.highly_variable_features]
-# check the minimum size of celltype matrix after filtering
-# np.min([sc_dat.obs.groupby(["Stage", "celltype"]).apply(lambda x: sc_dat[x.index, :].X.size)])
+## load in the modified HECA atlas
+snapshot_an_loc = Path(data_folder).expanduser() / "sc_deconv_snapshot.h5ad"
+sc_dat = an.read_h5ad(snapshot_an_loc)
 
 ## load in the EV CCHT only data and drop the "none" gene id in the end
 ccht_uf_raw = pd.read_feather(Path(data_folder).expanduser() / "filtered" / "annot_raw.feather").set_index("gene_id").iloc[:-1]
@@ -186,11 +132,6 @@ First we'll need to reformat the raw bulk RNA samples from EV to matrix form and
 
 ```{python}
 #| output: false
-
-## switch the expression matrix to raw counts if the matrix is preprocessed
-sc_dat.layers["scaled"] = sc_dat.X
-sc_dat.X = sc_dat.layers["counts"]
-del sc_dat.layers["counts"]
 
 model_params = {
   "celltype_key": "celltype",

@@ -177,21 +177,44 @@ frac_params = {
 
 ```{python}
 # placeholder image
-study_schema = funk.spacer_with_text(height=200, width=400)
+study_schema = funk.spacer_with_text(height=400, width=580)
 ```
 
 ### Overview of the Samples {.unnumbered .unlisted}
 
 ```{python}
 # barplot of the number of samples throughout the cycle phase
+barplot_ev_sum = alt.Chart(ccht_uf_pheno).mark_bar().encode(
+  x=alt.X("cyclephase:N"),
+  y=alt.Y("count(group):Q").title("Nr. of Samples"),
+  color=alt.Color("group:N")
+).properties(width=120, height=250)
+
 
 # include single cell data overview as extra column
+barplot_sc_sum = alt.Chart(
+  sc_dat.obs[["cyclephase", "samplename", "dataset"]].drop_duplicates()
+).mark_bar().encode(
+  x=alt.X("cyclephase:N"),
+  y=alt.Y("count(dataset):Q").title("Nr. of Donors"),
+  color=alt.Color("dataset:N")
+).properties(width=120, height=250)
+
+(barplot_ev_sum & barplot_sc_sum).resolve_scale(color="independent")
 
 ```
 
 ### UMAP of the samples? {.unnumbered .unlisted}
 
 ### Feature Counts? {.unnumbered .unlisted}
+
+:::
+
+```{python}
+
+(study_schema | (barplot_ev_sum & barplot_sc_sum).resolve_scale(color="independent"))
+
+```
 
 ## FIG 2: Cell Type Deconvolution Profiles throughout the Menstrual Cycle
 
@@ -293,7 +316,6 @@ Here we create a visual representation of the statistical testing and correlatio
 
 ```{python}
 ## data manipulation for the plot
-
 def swap_groups(df, to_swap):
   for g1, g2 in to_swap:
     # find that combination of pairs in the dataframe
@@ -330,7 +352,6 @@ stat_comb_prim = (
   .sort_values(["lineage", "celltype"])
   .reset_index(drop=True)
 )
-
 ```
 
 For the Biopsy samples comparison:
@@ -602,13 +623,6 @@ corr_mat = (
   .join(prepped_pheno[["cyclephase"]], on="y_vars", lsuffix="_y")
 )
 
-# create a colormap for rows
-lut = dict(zip(
-  np.sort(prepped_pheno.cyclephase.unique()),
-  sns.color_palette("Set2", prepped_pheno.cyclephase.unique().size).as_hex()
-  ))
-# colors for axes
-row_colors = prepped_pheno.cyclephase.astype("object").map(lut)
 ```
 
 ```{python}
@@ -654,3 +668,4 @@ final_chart
 ```{python}
 (dendro_barplot & final_chart).resolve_scale(color="independent").show()
 ```
+

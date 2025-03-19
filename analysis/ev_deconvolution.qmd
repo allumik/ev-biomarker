@@ -47,13 +47,13 @@ from matplotlib.patches import Patch
 from sklearn.preprocessing import normalize
 
 ## import the functions used in this report (got too long to include them in the report)
-import analysis.deconvo_functions as funk
+import deconvo_functions as funk
 
 ## Do you want to rerun all the models?
-rerun_all = False
+rerun_all = True
 
 ## load the environment variables from the .env file
-load_dotenv(Path.cwd() / ".env")
+load_dotenv() # load_dotenv(Path.cwd() / ".env")
 
 anndata_folder = getenv("ANNDATA_FOLDER")
 atlas_folder = getenv("ATLAS_FOLDER")
@@ -65,6 +65,7 @@ raw_data_folder = getenv("RAW_DATA_FOLDER")
 replace_dict = {
   "Proliferative Early": "EP",
   "Proliferative Late": "LP",
+  "Proliferative": "LP",
   "Secretory Early": "ES",
   "Secretory Mid": "MS",
   "Secretory Late": "LS",
@@ -81,6 +82,8 @@ replace_immu = {
   "T-cells": ["T_Reg", "T_cell_CD8", "T_cell_CD4", "T_cell_cycling"]
 }
 inv_replace_immu = {value: key for key, values in replace_immu.items() for value in values}
+
+cyclephase_to_include = ["LS", "LP", "EP", "ES", "MS", "Menstrual"]
 
 ```
 
@@ -135,7 +138,7 @@ if not snapshot_an_loc.exists():
   del sc_dat_immu
 
   ## also exclude the endometriosis samples
-  the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C')"
+  the_condition = "(celltype not in @sc_dat.var.index) & (Endometrial_pathology == 'C') & (cyclephase in @cyclephase_to_include)"
   sc_dat = sc_dat[sc_dat.obs.query(the_condition).index, :].to_memory()
 
   ## exclude some celltypes, such as she hormones cell types and poorly represented samples
@@ -161,7 +164,7 @@ else:
 
 ```
 
-We also excluded celltypes that have less than 100 cells represented, that includes `{python} print(no_go_celltype)`
+We also excluded celltypes that have less than 100 cells represented.
 
 Load in the bulk data from the EV and biopsy samples
 
