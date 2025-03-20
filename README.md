@@ -1,4 +1,4 @@
-# Endometrial receptivity profiling and deconvolution of Extracellular Vesicules
+# Endometrial receptivity profiling of Extracellular Vesicules
 
 This study builds on previous work done by Vigano et al (TODO: add cite) and by Meltsov et al. (TODO: add cite) to move towards a non-invasive method for receptivity testing. Best efforts were made to try to organise things in the following way:
 
